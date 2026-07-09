@@ -37,31 +37,31 @@ import com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MeleeWeapon;
 //items are used through Item.execute(hero, action), which spends time and resumes the
 //actor loop itself (via the operate animation -> Char.onOperateComplete -> next());
 //callers must not also call hero.next()
-class BotItems {
+public class BotItems {
 
 	//drink a healing potion below this fraction of max HP
-	static final float HEAL_AT    = 0.30f;
+	public static final float HEAL_AT    = 0.30f;
 	//run from adjacent enemies below this fraction of max HP
-	static final float RETREAT_AT = 0.20f;
+	public static final float RETREAT_AT = 0.20f;
 	//rest after clearing a floor below this fraction of max HP
-	static final float REST_AT    = 0.70f;
+	public static final float REST_AT    = 0.70f;
 
 	//a healing potion that is safe to drink knowingly, or null
-	static PotionOfHealing healingPotion( Hero hero ) {
+	public static PotionOfHealing healingPotion(Hero hero) {
 		PotionOfHealing potion = hero.belongings.getItem(PotionOfHealing.class);
 		return potion != null && potion.isKnown() ? potion : null;
 	}
 
 	//the waterskin, if it holds any dew, or null. Waterskin offers its (private)
 	//DRINK action only while volume > 0
-	static Waterskin drinkableWaterskin( Hero hero ) {
+	public static Waterskin drinkableWaterskin(Hero hero) {
 		Waterskin skin = hero.belongings.getItem(Waterskin.class);
 		return skin != null && skin.actions(hero).contains("DRINK") ? skin : null;
 	}
 
 	//least filling food first, to waste as little of it as possible;
 	//risky food only when starving leaves no choice
-	static Food pickFood( Hero hero, boolean starving ) {
+	public static Food pickFood(Hero hero, boolean starving) {
 		Food best = null;
 		for (Food food : hero.belongings.getAllItems(Food.class)) {
 			if (!starving && food instanceof MysteryMeat) continue;
@@ -71,17 +71,17 @@ class BotItems {
 	}
 
 	//use-to-identify pacing: no sooner than these game times (reset each floor)
-	static float nextIdDrinkAt = 0;
-	static float nextIdReadAt = 0;
+	public static float nextIdDrinkAt = 0;
+	public static float nextIdReadAt = 0;
 
-	static Potion unknownPotion( Hero hero ) {
+	public static Potion unknownPotion(Hero hero) {
 		for (Potion potion : hero.belongings.getAllItems(Potion.class)) {
 			if (!potion.isKnown()) return potion;
 		}
 		return null;
 	}
 
-	static Scroll unknownScroll( Hero hero ) {
+	public static Scroll unknownScroll(Hero hero) {
 		for (Scroll scroll : hero.belongings.getAllItems(Scroll.class)) {
 			if (!scroll.isKnown()) return scroll;
 		}
@@ -89,7 +89,7 @@ class BotItems {
 	}
 
 	//what a scroll of upgrade should land on: the weaker piece of equipped gear
-	static Item upgradeTarget( Hero hero ) {
+	public static Item upgradeTarget(Hero hero) {
 		Item weapon = hero.belongings.weapon;
 		Armor armor = hero.belongings.armor;
 		if (weapon != null && armor != null) {
@@ -98,7 +98,7 @@ class BotItems {
 		return weapon != null ? weapon : armor;
 	}
 
-	static Item firstUnidentified( Hero hero ) {
+	public static Item firstUnidentified(Hero hero) {
 		for (Item item : hero.belongings) {
 			if (!item.isIdentified()) return item;
 		}
@@ -116,7 +116,7 @@ class BotItems {
 	//a backpack weapon that clearly beats the equipped one and is safe to swap to.
 	//never proposes swapping away a mage's staff, and a known-cursed equipped
 	//weapon can't be removed at all
-	static MeleeWeapon betterWeapon( Hero hero ) {
+	public static MeleeWeapon betterWeapon(Hero hero) {
 		if (hero.belongings.weapon instanceof MagesStaff) return null;
 		if (hero.belongings.weapon != null && hero.belongings.weapon.cursed) return null;
 
@@ -142,7 +142,7 @@ class BotItems {
 	//same idea for armor. armor with the warrior's seal attached is never swapped:
 	//that would open a seal-transfer prompt, and windows can't be opened safely
 	//from the actor thread
-	static Armor betterArmor( Hero hero ) {
+	public static Armor betterArmor(Hero hero) {
 		Armor current = hero.belongings.armor;
 		if (current != null && (current.cursed || current.checkSeal() != null)) return null;
 

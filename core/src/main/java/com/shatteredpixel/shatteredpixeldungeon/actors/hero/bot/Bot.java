@@ -138,7 +138,7 @@ public class Bot {
 	private static volatile UseIntent pendingUse = null;
 
 	//actor thread; the hero stays parked until the render thread performs the use
-	static boolean requestUse( Item item, String action, Item answer, String note ) {
+	public static boolean requestUse(Item item, String action, Item answer, String note) {
 		log("use -> %s", note);
 		pendingUse = new UseIntent(item, action, answer);
 		return true;
@@ -272,15 +272,15 @@ public class Bot {
 		return true;
 	}
 
-	static boolean isBlacklisted( int cell ) {
+	public static boolean isBlacklisted(int cell) {
 		return blacklist.contains(cell);
 	}
 
-	static void markSearched( int cell ) {
+	public static void markSearched(int cell) {
 		searchedCells.add(cell);
 	}
 
-	static boolean hasSearched( int cell ) {
+	public static boolean hasSearched(int cell) {
 		return searchedCells.contains(cell);
 	}
 
