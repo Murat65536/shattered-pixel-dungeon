@@ -44,6 +44,7 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.traps.Trap;
 import com.watabou.utils.PathFinder;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -56,11 +57,14 @@ public class BotPaths {
 		public final int[] dist;
 		//cells covered by a gas or cloud that hurts to stand in (see HAZARD_BLOBS)
 		public final boolean[] hazard;
+		//locked doors and exits the hero knows about
+		public final List<Integer> lockedDoors;
 
-		Snapshot( boolean[] pass, int[] dist, boolean[] hazard ) {
+		Snapshot( boolean[] pass, int[] dist, boolean[] hazard, List<Integer> lockedDoors ) {
 			this.pass = pass;
 			this.dist = dist;
 			this.hazard = hazard;
+			this.lockedDoors = lockedDoors;
 		}
 
 		public boolean reachable(int cell) {
@@ -74,8 +78,15 @@ public class BotPaths {
 		Level level = Dungeon.level;
 		int length = level.length();
 		boolean[] pass = new boolean[length];
+		List<Integer> lockedDoors = new ArrayList<>();
 		for (int i = 0; i < length; i++) {
-			pass[i] = level.passable[i] && (level.visited[i] || level.mapped[i]);
+			boolean known = level.visited[i] || level.mapped[i];
+			pass[i] = level.passable[i] && known;
+			if (known && (level.map[i] == Terrain.LOCKED_DOOR
+					|| level.map[i] == Terrain.CRYSTAL_DOOR
+					|| level.map[i] == Terrain.LOCKED_EXIT)) {
+				lockedDoors.add(i);
+			}
 		}
 		boolean[] hazard = hazards(hero);
 
@@ -104,7 +115,7 @@ public class BotPaths {
 		pass[hero.pos] = true;
 		PathFinder.buildDistanceMap(hero.pos, pass);
 		int[] dist = PathFinder.distance.clone();
-		return new Snapshot(pass, dist, hazard);
+		return new Snapshot(pass, dist, hazard, lockedDoors);
 	}
 
 	//cells a discovered SentryRoom sentry would zap the hero on, mirroring its

@@ -24,16 +24,14 @@ public class Unlock extends BotBrain.Behavior {
         boolean hasIronKey = Notes.keyCount(new IronKey(Dungeon.depth)) > 0;
         boolean hasCrystalKey = Notes.keyCount(new CrystalKey(Dungeon.depth)) > 0;
         boolean hasWornKey = Notes.keyCount(new WornKey(Dungeon.depth)) > 0;
-        if (!hasIronKey && !hasCrystalKey && !hasWornKey) return false;
 
         int best = -1;
         int bestDist = Integer.MAX_VALUE;
-        for (int c = 0; c < s.dist.length; c++) {
+        for (int c : s.lockedDoors) {
             int terrain = Dungeon.level.map[c];
             boolean openable = (terrain == Terrain.LOCKED_DOOR && hasIronKey)
                     || (terrain == Terrain.CRYSTAL_DOOR && hasCrystalKey) || (terrain == Terrain.LOCKED_EXIT && hasWornKey);
             if (!openable) continue;
-            if (!(Dungeon.level.visited[c] || Dungeon.level.mapped[c])) continue;
             if (Bot.isBlacklisted(c)) continue;
             int dist = BotPaths.adjacentDist(c, s);
             if (dist < bestDist) {
