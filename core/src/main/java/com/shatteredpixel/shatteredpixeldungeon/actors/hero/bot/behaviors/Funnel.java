@@ -1,12 +1,13 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
-import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
-import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Swarm;
+
+import java.util.ArrayList;
+import java.util.List;
 
 //when outnumbered, back into a chokepoint - a corridor, doorway or dead-end -
 //so the pack can only engage one at a time, then hold there and let Fight cut
@@ -16,6 +17,9 @@ public class Funnel extends BotBrain.Behavior {
 
     private static final int MAX_TREK = 8;
     private static final int MAX_WAITS = 12;
+    //how long a flanking route around the hero may be before it stops counting
+    //as an attack slot: anything longer can't land within a full hold
+    private static final int FLANK_STEPS = MAX_WAITS;
 
     private int waits = 0;
 
@@ -31,39 +35,37 @@ public class Funnel extends BotBrain.Behavior {
 
     @Override
     public boolean tryAct(Hero hero, BotPaths.Snapshot s ) {
-        //only kicks in against a pack that is actively coming for the hero
-        int hunters = 0;
-        for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
-            if (mob.state != mob.HUNTING) continue;
-            if (waterBound(mob)) continue;
-            if (!hero.canAttack(mob) && !s.reachable(mob.pos)) continue;
-            hunters++;
-        }
-        if (hunters < 2) {
-            waits = 0;
-            return false;
-        }
+        //waits survives only across consecutive holds; every other path clears it
+        int held = waits;
+        waits = 0;
 
-        if (BotPaths.attackSlots(hero.pos) <= 2) {
+        //only kicks in against a pack that is actively coming for the hero
+        List<Mob> hunters = new ArrayList<>();
+        for (Mob mob : hero.getVisibleEnemies()) {
+            if (!threat(mob) || mob.state != mob.HUNTING) continue;
+            if (!hero.canAttack(mob) && !s.reachable(mob.pos)) continue;
+            hunters.add(mob);
+        }
+        if (hunters.size() < 2) return false;
+
+        //funneled means the pack can only ever bring one attacker to bear: it
+        //must not be able to reach more than one cell beside the hero
+        if (BotPaths.reachableAttackSlots(hero.pos, hunters, FLANK_STEPS) <= 1) {
             //already funneled: strike whoever is in reach, otherwise hold
             //position and make them file in one by one
             for (Mob mob : hero.getVisibleEnemies()) {
-                if (mob.alignment == Char.Alignment.ENEMY && mob.state != mob.PASSIVE
-                        && !waterBound(mob) && hero.canAttack(mob)) {
-                    waits = 0;
+                if (threat(mob) && hero.canAttack(mob)) {
                     return false; //Fight picks the best in-reach target
                 }
             }
-            if (waits >= MAX_WAITS) return false; //they aren't coming; go to them
-            if (waits == 0) Bot.log("funnel: holding against %d hunters", hunters);
-            waits++;
+            if (held >= MAX_WAITS) return false; //they aren't coming; go to them
+            if (held == 0) Bot.log("funnel: holding against %d hunters", hunters.size());
+            waits = held + 1;
             hero.rest(false);
             return true;
         }
 
-        waits = 0;
-        int spot = BotPaths.chokePoint(hero, s, MAX_TREK);
+        int spot = BotPaths.chokePoint(hero, s, hunters, MAX_TREK, FLANK_STEPS);
         return spot != -1 && issueHandle(hero, name(), spot);
     }
 }

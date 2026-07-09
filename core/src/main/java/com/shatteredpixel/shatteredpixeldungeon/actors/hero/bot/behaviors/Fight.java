@@ -1,6 +1,5 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
-import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
@@ -41,8 +40,7 @@ public class Fight extends BotBrain.Behavior {
         Mob best = null;
         float bestScore = -1;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
-            if (waterBound(mob)) continue;
+            if (!threat(mob)) continue;
             if (Bot.isBlacklisted(mob.pos)) continue;
             if (!hero.canAttack(mob)) continue;
             float score = mob.surprisedBy(hero, true) ? 2f : hitChance(hero, mob);
@@ -60,9 +58,8 @@ public class Fight extends BotBrain.Behavior {
         //wading in; a hunter will come out on its own, a sleeper can wait
         int bestDist = Integer.MAX_VALUE;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
+            if (!threat(mob)) continue;
             if (threatsOnly && mob.state == mob.SLEEPING) continue;
-            if (waterBound(mob)) continue;
             if (Bot.isBlacklisted(mob.pos) || s.hazard[mob.pos]) continue;
             if (!s.reachable(mob.pos)) continue;
             if (s.dist[mob.pos] < bestDist) {

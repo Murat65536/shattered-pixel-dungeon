@@ -89,15 +89,23 @@ public class BotBrain {
 		protected static boolean waterBound( Mob mob ) {
 			return mob instanceof Piranha;
 		}
+
+		//an enemy worth fighting or fleeing: hostile, not passive, and able to
+		//leave the water. the shared first cut every combat behavior applies
+		//before its own criteria
+		protected static boolean threat( Mob mob ) {
+			return mob.alignment == Char.Alignment.ENEMY
+					&& mob.state != mob.PASSIVE && !waterBound(mob);
+		}
 	}
 
 	private static final Behavior[] CHAIN = new Behavior[]{
 			new Heal(),
 			new Retreat(),
-			new Ambush(),
 			new Cover(),
-			new Funnel(),
 			new Shoot(),
+			new Ambush(),
+			new Funnel(),
 			new Fight("fight", true),
 			new Eat(),
 			new Equip(),

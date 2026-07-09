@@ -2,7 +2,6 @@ package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
-import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
@@ -129,8 +128,7 @@ public class Ambush extends BotBrain.Behavior {
         //never sit in ambush while something better fought head-on is in reach;
         //fellow slippery chasers don't count, or wraith packs would break the plan
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob != target && mob.alignment == Char.Alignment.ENEMY
-                    && mob.state != mob.PASSIVE && !waterBound(mob) && hero.canAttack(mob)
+            if (mob != target && threat(mob) && hero.canAttack(mob)
                     && (mob.surprisedBy(hero, true) || !canSetUp(hero, mob, s))) {
                 return false;
             }
@@ -244,8 +242,7 @@ public class Ambush extends BotBrain.Behavior {
     private int nearestHunterDist( Hero hero, BotPaths.Snapshot s ) {
         int nearest = s.dist[target.pos];
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment == Char.Alignment.ENEMY && mob.state != mob.PASSIVE
-                    && !waterBound(mob) && s.dist[mob.pos] < nearest) {
+            if (threat(mob) && s.dist[mob.pos] < nearest) {
                 nearest = s.dist[mob.pos];
             }
         }
@@ -255,8 +252,7 @@ public class Ambush extends BotBrain.Behavior {
     private void acquire( Hero hero, BotPaths.Snapshot s ) {
         int bestDist = Integer.MAX_VALUE;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
-            if (waterBound(mob)) continue;
+            if (!threat(mob)) continue;
             //only ambush what chases, or will: a wanderer close enough to notice
             //the hero (they are in each other's sight) starts hunting right away
             boolean willChase = mob.state == mob.HUNTING

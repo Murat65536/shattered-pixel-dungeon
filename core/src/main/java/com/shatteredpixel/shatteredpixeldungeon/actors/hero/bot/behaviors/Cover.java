@@ -1,7 +1,6 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
-import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
@@ -90,8 +89,7 @@ public class Cover extends BotBrain.Behavior {
 
         //anything already in reach is Fight's problem before hiding is worth it
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment == Char.Alignment.ENEMY && mob.state != mob.PASSIVE
-                    && !waterBound(mob) && hero.canAttack(mob)) {
+            if (threat(mob) && hero.canAttack(mob)) {
                 return false;
             }
         }
@@ -130,8 +128,8 @@ public class Cover extends BotBrain.Behavior {
     private List<Mob> shooters( Hero hero ) {
         List<Mob> shooters = new ArrayList<>();
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment != Char.Alignment.ENEMY || mob.state != mob.HUNTING) continue;
-            if (waterBound(mob) || mob == givenUpOn) continue;
+            if (!threat(mob) || mob.state != mob.HUNTING) continue;
+            if (mob == givenUpOn) continue;
             if (Bot.isBlacklisted(mob.pos)) continue;
             if (Dungeon.level.adjacent(hero.pos, mob.pos)) continue;
             if (mob.canAttackTarget(hero)) shooters.add(mob);

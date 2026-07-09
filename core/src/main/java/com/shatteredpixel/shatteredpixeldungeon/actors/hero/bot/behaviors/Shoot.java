@@ -1,7 +1,6 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
-import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
@@ -32,8 +31,7 @@ public class Shoot extends BotBrain.Behavior {
         //anything already in reach is Fight's problem; swapping to a throw while
         //standing in melee just gives up the better trade
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment == Char.Alignment.ENEMY && mob.state != mob.PASSIVE
-                    && !waterBound(mob) && hero.canAttack(mob)) {
+            if (threat(mob) && hero.canAttack(mob)) {
                 return false;
             }
         }
@@ -44,8 +42,8 @@ public class Shoot extends BotBrain.Behavior {
         Mob best = null;
         int bestDist = Integer.MAX_VALUE;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment != Char.Alignment.ENEMY || mob.state != mob.HUNTING) continue;
-            if (waterBound(mob) || Bot.isBlacklisted(mob.pos)) continue;
+            if (!threat(mob) || mob.state != mob.HUNTING) continue;
+            if (Bot.isBlacklisted(mob.pos)) continue;
             //committed to the hero: shooting already, or able to walk over.
             //one that can do neither can be safely ignored, not sniped
             if (!mob.canAttackTarget(hero) && !s.reachable(mob.pos)) continue;

@@ -44,6 +44,7 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.traps.Trap;
 import com.watabou.utils.PathFinder;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -376,9 +377,44 @@ public class BotPaths {
 		return slots;
 	}
 
-	//nearest free cell where at most 2 enemies could stand beside the hero, ties
-	//broken toward the tighter squeeze. -1 when none within maxTrek steps
-	public static int chokePoint(Hero hero, Snapshot s, int maxTrek) {
+	//how many cells beside c these mobs could actually stand on to strike, given
+	//they have to path there around c rather than through it. unlike attackSlots
+	//this tells corridors apart: with the whole pack on one end the far slot only
+	//counts if a flanking route no longer than maxSteps exists, so 1 means a true
+	//one-at-a-time squeeze while a doorway between two occupied rooms is still 2
+	public static int reachableAttackSlots(int c, List<Mob> mobs, int maxSteps) {
+		Level level = Dungeon.level;
+		int length = level.length();
+		int[] steps = new int[length];
+		Arrays.fill(steps, Integer.MAX_VALUE);
+		ArrayDeque<Integer> queue = new ArrayDeque<>();
+		for (Mob mob : mobs) {
+			steps[mob.pos] = 0;
+			queue.add(mob.pos);
+		}
+		while (!queue.isEmpty()) {
+			int cell = queue.poll();
+			if (steps[cell] >= maxSteps) continue;
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int n = cell + offset;
+				if (n < 0 || n >= length || n == c || !level.passable[n]
+						|| steps[n] <= steps[cell] + 1) continue;
+				steps[n] = steps[cell] + 1;
+				queue.add(n);
+			}
+		}
+		int slots = 0;
+		for (int offset : PathFinder.NEIGHBOURS8) {
+			int n = c + offset;
+			if (n >= 0 && n < length && steps[n] < Integer.MAX_VALUE) slots++;
+		}
+		return slots;
+	}
+
+	//nearest free cell where the hunters can only ever bring one attacker to bear
+	//(see reachableAttackSlots), ties broken toward the tighter squeeze. -1 when
+	//none within maxTrek steps
+	public static int chokePoint(Hero hero, Snapshot s, List<Mob> hunters, int maxTrek, int flankSteps) {
 		int best = -1;
 		int bestDist = Integer.MAX_VALUE;
 		int bestSlots = Integer.MAX_VALUE;
@@ -386,8 +422,9 @@ public class BotPaths {
 			if (c == hero.pos || !s.pass[c] || s.hazard[c] || s.dist[c] > maxTrek
 					|| s.dist[c] > bestDist || Bot.isBlacklisted(c)) continue;
 			if (Actor.findChar(c) != null) continue;
-			int slots = attackSlots(c);
-			if (slots > 2) continue;
+			if (attackSlots(c) > 2) continue; //cheap prefilter before the flood fill
+			int slots = reachableAttackSlots(c, hunters, flankSteps);
+			if (slots > 1) continue;
 			if (s.dist[c] < bestDist || slots < bestSlots) {
 				best = c;
 				bestDist = s.dist[c];
