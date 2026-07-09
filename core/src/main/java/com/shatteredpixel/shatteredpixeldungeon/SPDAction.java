@@ -76,6 +76,7 @@ public class SPDAction extends GameAction {
 	public static final GameAction EXAMINE      = new SPDAction("examine");
 	public static final GameAction WAIT         = new SPDAction("wait");
 	public static final GameAction REST         = new SPDAction("rest");
+	public static final GameAction BOT          = new SPDAction("bot");
 
 	public static final GameAction TAG_ATTACK   = new SPDAction("tag_attack");
 	public static final GameAction TAG_ACTION   = new SPDAction("tag_action");
@@ -133,6 +134,7 @@ public class SPDAction extends GameAction {
 
 		defaultBindings.put( Input.Keys.E,              SPDAction.EXAMINE );
 		defaultBindings.put( Input.Keys.Z,              SPDAction.REST );
+		defaultBindings.put( Input.Keys.B,              SPDAction.BOT );
 
 		defaultBindings.put( Input.Keys.Q,              SPDAction.TAG_ATTACK );
 		defaultBindings.put( Input.Keys.TAB,            SPDAction.CYCLE);

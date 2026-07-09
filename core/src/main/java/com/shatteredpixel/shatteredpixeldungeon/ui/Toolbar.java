@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Buff;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.HoldFast;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Belongings;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.bags.Bag;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
@@ -243,6 +244,25 @@ public class Toolbar extends Component {
 			public GameAction keyAction() {
 				if (btnWait.active) return SPDAction.REST;
 				else				return null;
+			}
+		});
+
+		//hidden button for bot toggle keybind, also drives the bot's render-thread tick
+		add(new Button(){
+			@Override
+			protected void onClick() {
+				Bot.toggle();
+			}
+
+			@Override
+			public void update() {
+				super.update();
+				Bot.onRenderTick();
+			}
+
+			@Override
+			public GameAction keyAction() {
+				return SPDAction.BOT;
 			}
 		});
 

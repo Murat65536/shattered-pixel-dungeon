@@ -401,6 +401,21 @@ public class InventoryPane extends Component {
 		return selector != null;
 	}
 
+	//the item selection prompt currently awaiting an answer, if any
+	public static WndBag.ItemSelector currentSelector(){
+		return instance == null ? null : instance.selector;
+	}
+
+	//answers (or cancels, with null) an active item selection prompt
+	public static void answerSelection( Item item ){
+		if (instance != null && instance.selector != null){
+			WndBag.ItemSelector activating = instance.selector;
+			instance.selector = null;
+			activating.onSelect( item );
+			instance.updateInventory();
+		}
+	}
+
 	public static void clearTargetingSlot(){
 		targetingSlot = null;
 	}

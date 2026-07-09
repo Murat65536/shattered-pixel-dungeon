@@ -1383,6 +1383,18 @@ public class GameScene extends PixelScene {
 		return false;
 	}
 
+	//the top-most window currently showing, or null
+	public static Window frontWindow(){
+		if (scene == null) return null;
+
+		Window w = null;
+		for (Gizmo g : scene.members){
+			if (g instanceof Window) w = (Window) g;
+		}
+
+		return w;
+	}
+
 	public static boolean interfaceBlockingHero(){
 		if (scene == null) return false;
 
