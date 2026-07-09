@@ -474,6 +474,11 @@ public abstract class Mob extends Char {
 		return false;
 	}
 	
+	//public view of canAttack for the hero bot's threat assessment
+	public boolean canAttackTarget( Char enemy ) {
+		return canAttack( enemy );
+	}
+
 	protected boolean canAttack( Char enemy ) {
 		if (Dungeon.level.adjacent( pos, enemy.pos )){
 			return true;

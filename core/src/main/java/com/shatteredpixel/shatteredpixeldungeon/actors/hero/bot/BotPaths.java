@@ -39,6 +39,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
+import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.special.SentryRoom;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.traps.Trap;
 import com.watabou.utils.PathFinder;
@@ -76,11 +77,54 @@ public class BotPaths {
 		for (int i = 0; i < length; i++) {
 			pass[i] = level.passable[i] && (level.visited[i] || level.mapped[i]);
 		}
+		boolean[] hazard = hazards(hero);
+
+		//a SentryRoom turret is no enemy at all (a neutral, invulnerable NPC), so
+		//no fight behavior will ever see it - it simply executes whoever lingers
+		//on its watched carpet. those cells are walled off outright: hazard alone
+		//wouldn't help, since the treasure past them sits on a safe pedestal and
+		//only the walk is lethal. dashing in under haste is a future project
+		boolean[] watched = sentryWatched(level);
+		if (watched != null && !watched[hero.pos]) {
+			for (int i = 0; i < length; i++) {
+				if (watched[i]) {
+					hazard[i] = true;
+					pass[i] = false;
+				}
+			}
+		} else if (watched != null) {
+			//already standing in the zone (the bot never walks in, but the player
+			//may have): keep it walkable so the way out exists, just marked
+			for (int i = 0; i < length; i++) {
+				if (watched[i]) hazard[i] = true;
+			}
+		}
+
 		//the hero may be standing somewhere the mask excludes (e.g. a just-revealed trap)
 		pass[hero.pos] = true;
 		PathFinder.buildDistanceMap(hero.pos, pass);
 		int[] dist = PathFinder.distance.clone();
-		return new Snapshot(pass, dist, hazards(hero));
+		return new Snapshot(pass, dist, hazard);
+	}
+
+	//cells a discovered SentryRoom sentry would zap the hero on, mirroring its
+	//trigger: standing on the room's carpet (EMPTY_SP) in its line of sight.
+	//null when this floor has no discovered sentry
+	private static boolean[] sentryWatched( Level level ) {
+		boolean[] watched = null;
+		for (Mob mob : level.mobs) {
+			if (!(mob instanceof SentryRoom.Sentry)) continue;
+			//not discovered yet: the bot doesn't act on turrets it hasn't seen
+			if (!level.visited[mob.pos] && !level.mapped[mob.pos]) continue;
+			for (int c = 0; c < level.length(); c++) {
+				if (level.map[c] != Terrain.EMPTY_SP) continue;
+				if (level.distance(mob.pos, c) > mob.viewDistance) continue;
+				if (!lineFree(mob.pos, c, -1)) continue;
+				if (watched == null) watched = new boolean[level.length()];
+				watched[c] = true;
+			}
+		}
+		return watched;
 	}
 
 	//blobs that damage or disable whoever stands in them; benign ones (smoke,
@@ -256,9 +300,40 @@ public class BotPaths {
 		return false;
 	}
 
+	//whether anything on this list of shooters has a clear line to the cell
+	public static boolean exposedTo( List<Mob> shooters, int cell ) {
+		for (Mob mob : shooters) {
+			if (lineFree(mob.pos, cell, -1)) return true;
+		}
+		return false;
+	}
+
+	//nearest reachable cell no shooter has a straight line to, ties broken toward
+	//fewer attack slots (once they walk over, better to meet them in a choke).
+	//-1 when nothing within maxTrek steps is out of their sight
+	public static int coverSpot( Hero hero, Snapshot s, List<Mob> shooters, int maxTrek ) {
+		int best = -1;
+		int bestDist = Integer.MAX_VALUE;
+		int bestSlots = Integer.MAX_VALUE;
+		for (int c = 0; c < s.dist.length; c++) {
+			if (c == hero.pos || !s.pass[c] || s.hazard[c] || s.dist[c] > maxTrek
+					|| s.dist[c] > bestDist || Bot.isBlacklisted(c)) continue;
+			if (Actor.findChar(c) != null) continue;
+			if (exposedTo(shooters, c)) continue;
+			int slots = attackSlots(c);
+			if (s.dist[c] < bestDist || slots < bestSlots) {
+				best = c;
+				bestDist = s.dist[c];
+				bestSlots = slots;
+			}
+		}
+		return best;
+	}
+
 	//straight-line sight approximation: walks a bresenham line and reports whether
 	//it is clear of los-blocking terrain, treating closedDoor as shut. cruder than
-	//the game's shadowcasting, but only used to judge cells right next to a door
+	//the game's shadowcasting, but good enough for judging door-side ambush cells
+	//and ranged-attack cover; a rare wrong call just costs one extra reposition
 	private static boolean lineFree( int from, int to, int closedDoor ) {
 		Level level = Dungeon.level;
 		int w = level.width();
