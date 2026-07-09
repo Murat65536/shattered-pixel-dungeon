@@ -27,6 +27,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.ui.InventoryPane;
+import com.shatteredpixel.shatteredpixeldungeon.ui.Window;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndBag;
 
@@ -158,9 +159,16 @@ public class Bot {
 		pendingUse = null;
 		use.item.execute(hero, use.action);
 
+		//the use may have opened an item selection prompt: either the inventory
+		//pane's selector, or a WndBag window on small-screen UI
 		WndBag.ItemSelector selector = InventoryPane.currentSelector();
 		if (selector != null && use.answer != null && selector.itemSelectable(use.answer)) {
 			InventoryPane.answerSelection(use.answer);
+		} else if (selector == null) {
+			Window front = GameScene.frontWindow();
+			if (front instanceof WndBag) {
+				BotWindows.answerBagWindow((WndBag) front, use.answer);
+			}
 		}
 
 		//if the use fizzled without spending time (e.g. while blinded), resume the loop

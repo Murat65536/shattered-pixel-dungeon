@@ -86,6 +86,13 @@ class BotWindows {
 			return;
 		}
 
+		//item selection as a window (small-screen UI, or the pane being unusable);
+		//answer it once, and if it somehow lingers let the escalation cancel it
+		if (window instanceof WndBag && sameWindowTicks == 0
+				&& answerBagWindow((WndBag) window, null)) {
+			return;
+		}
+
 		//generic escalation: polite back-press, then the first button, then force-close
 		if (sameWindowTicks == 0) {
 			Bot.log("windows: dismissing %s", window.getClass().getSimpleName());
@@ -144,15 +151,38 @@ class BotWindows {
 
 		cooldown = 0.25f;
 
-		Item pick = null;
-		for (Item item : Dungeon.hero.belongings) {
-			if (selector.itemSelectable(item)) {
-				pick = item;
-				break;
-			}
-		}
+		Item pick = firstSelectable(selector);
 		Bot.log("windows: item prompt -> %s", pick == null ? "cancel" : pick.name());
 		InventoryPane.answerSelection(pick);
+	}
+
+	//answers a WndBag selection window the way clicking one of its item slots would.
+	//returns false when the window is plain inventory browsing with nothing to answer
+	static boolean answerBagWindow( WndBag window, Item pick ) {
+		WndBag.ItemSelector selector = window.getSelector();
+		if (selector == null) return false;
+
+		if (pick == null || !selector.itemSelectable(pick)) {
+			pick = firstSelectable(selector);
+		}
+
+		Bot.log("windows: item prompt -> %s", pick == null ? "cancel" : pick.name());
+		if (pick == null) {
+			//proper cancel: onSelect(null) then hide
+			window.onBackPressed();
+		} else {
+			if (selector.hideAfterSelecting()) window.hide();
+			selector.onSelect(pick);
+		}
+		return true;
+	}
+
+	private static Item firstSelectable( WndBag.ItemSelector selector ) {
+		if (Dungeon.hero == null) return null;
+		for (Item item : Dungeon.hero.belongings) {
+			if (selector.itemSelectable(item)) return item;
+		}
+		return null;
 	}
 
 	private static ArrayList<RedButton> redButtons( Window window ) {
