@@ -37,7 +37,7 @@ public class Retreat extends BotBrain.Behavior {
         Mob threat = null;
         for (Mob mob : hero.getVisibleEnemies()) {
             if (mob.alignment == Char.Alignment.ENEMY && mob.state != mob.PASSIVE
-                    && Dungeon.level.adjacent(hero.pos, mob.pos)) {
+                    && Dungeon.level.adjacent(hero.pos, mob.pos) && mob.speed() < hero.speed()) {
                 threat = mob;
                 break;
             }
