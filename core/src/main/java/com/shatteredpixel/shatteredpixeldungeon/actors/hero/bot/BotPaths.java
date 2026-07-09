@@ -23,7 +23,9 @@ package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
+import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.traps.Trap;
 import com.watabou.utils.PathFinder;
@@ -130,6 +132,43 @@ class BotPaths {
 			}
 		}
 		return best;
+	}
+
+	//how far the bot is willing to walk to set up a door ambush
+	private static final int MAX_AMBUSH_TREK = 12;
+
+	//nearest cell to lie in wait on: walkable, out of the mob's sight, beside a
+	//closed door (which blocks its line of sight) but not in the doorway itself.
+	//-1 when no such spot is worth the walk
+	static int ambushSpot( Hero hero, Mob mob, Snapshot s ) {
+		Level level = Dungeon.level;
+		int best = -1;
+		int bestDist = Integer.MAX_VALUE;
+		for (int c = 0; c < s.dist.length; c++) {
+			if (!s.pass[c] || s.dist[c] >= bestDist || Bot.isBlacklisted(c)) continue;
+
+			int terrain = level.map[c];
+			if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
+
+			if (mob.fieldOfView != null && mob.fieldOfView.length == level.length()
+					&& mob.fieldOfView[c]) {
+				continue;
+			}
+
+			boolean besideDoor = false;
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int d = c + offset;
+				if (d >= 0 && d < s.dist.length && level.map[d] == Terrain.DOOR) {
+					besideDoor = true;
+					break;
+				}
+			}
+			if (!besideDoor) continue;
+
+			best = c;
+			bestDist = s.dist[c];
+		}
+		return bestDist <= MAX_AMBUSH_TREK ? best : -1;
 	}
 
 	//honest-mode fallback: nearest walkable cell the bot has not searched from yet

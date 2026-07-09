@@ -45,6 +45,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfUpgrade;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MeleeWeapon;
 import com.shatteredpixel.shatteredpixeldungeon.journal.Notes;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
+import com.watabou.utils.PathFinder;
 
 //the bot's decision maker: first behavior in the chain that can act, acts.
 //every decision must either spend game time or be caught by Bot's guards
@@ -62,6 +63,7 @@ class BotBrain {
 	private static final Behavior[] CHAIN = new Behavior[]{
 			new Heal(),
 			new Retreat(),
+			new Ambush(),
 			new Fight(),
 			new Eat(),
 			new Equip(),
@@ -198,6 +200,169 @@ class BotBrain {
 		}
 	}
 
+	//approximates Char.hit(): both sides roll uniformly up to their skill
+	static float hitChance( Hero hero, Mob mob ) {
+		float acu = hero.attackSkill(mob);
+		float def = mob.defenseSkill(hero);
+		if (acu <= 0) return 0;
+		if (def <= 0) return 1;
+		return acu >= def ? 1f - def / (2f * acu) : acu / (2f * def);
+	}
+
+	//against hard-to-hit enemies, don't trade misses: slip behind a closed door
+	//(which blocks their sight), wait beside it, and strike as they step through.
+	//an enemy that hasn't seen the hero is surprised, and surprise attacks never miss
+	private static class Ambush implements Behavior {
+
+		private static final float HIT_CHANCE_FLOOR = 0.55f;
+		private static final int MAX_WAITS = 12;
+
+		private Mob target = null;
+		private Mob givenUpOn = null;
+		private int waits = 0;
+
+		@Override
+		public String name() {
+			return "ambush";
+		}
+
+		@Override
+		public boolean essential() {
+			return true;
+		}
+
+		@Override
+		public boolean tryAct( Hero hero, BotPaths.Snapshot s ) {
+			if (givenUpOn != null && !givenUpOn.isAlive()) givenUpOn = null;
+
+			//drop the mark once it dies or stops hunting; a mob that forgot the hero
+			//gets surprise-hit by the ordinary Fight charge anyway
+			if (target != null && (!target.isAlive()
+					|| !Dungeon.level.mobs.contains(target) || target.state != target.HUNTING)) {
+				target = null;
+				waits = 0;
+			}
+
+			if (target == null) {
+				acquire(hero, s);
+				if (target == null) return false;
+				Bot.log("ambush: %s is hard to hit (%.0f%%), setting a trap",
+						target.name(), 100 * hitChance(hero, target));
+			}
+
+			//the mark is in reach and actually visible (it can sit adjacent yet unseen,
+			//diagonally behind the closed door - attacking then would just open it)
+			boolean seen = hero.fieldOfView != null && hero.fieldOfView.length == Dungeon.level.length()
+					&& hero.fieldOfView[target.pos];
+			if (seen && (hero.canAttack(target) || Dungeon.level.adjacent(hero.pos, target.pos))) {
+				//unaware: spring the trap, the hit is guaranteed
+				if (target.surprisedBy(hero, true)) {
+					Mob struck = target;
+					target = null;
+					waits = 0;
+					return issueHandle(hero, name(), struck.pos);
+				}
+				//aware and already at the door: brawl rather than dance in and out
+				if (besideClosedDoor(hero.pos)) {
+					return issueHandle(hero, name(), target.pos);
+				}
+				//aware in the open (e.g. wraiths spawning around a grave): don't
+				//trade misses, walk it to a door instead - it will follow
+				int spot = BotPaths.ambushSpot(hero, target, s);
+				if (spot == -1) {
+					giveUp("no door to hide behind");
+					return false;
+				}
+				if (spot != hero.pos) {
+					return issueHandle(hero, name() + "-hide", spot);
+				}
+			}
+
+			//never sit in ambush while something we can actually hit is in reach;
+			//fellow slippery chasers don't count, or wraith packs would break the plan
+			for (Mob mob : hero.getVisibleEnemies()) {
+				if (mob != target && mob.alignment == Char.Alignment.ENEMY
+						&& mob.state != mob.PASSIVE && hero.canAttack(mob)
+						&& (hitChance(hero, mob) >= HIT_CHANCE_FLOOR || mob.surprisedBy(hero, true))) {
+					return false;
+				}
+			}
+
+			if (hidden(hero)) {
+				if (++waits > MAX_WAITS) {
+					giveUp("it isn't taking the bait");
+					return false;
+				}
+				Bot.log("ambush: waiting");
+				hero.rest(false);
+				return true;
+			}
+
+			int spot = BotPaths.ambushSpot(hero, target, s);
+			if (spot == -1) {
+				giveUp("no door to hide behind");
+				return false;
+			}
+			if (spot == hero.pos) {
+				//already in place, the mob just hasn't lost sight yet
+				if (++waits > MAX_WAITS) {
+					giveUp("it isn't taking the bait");
+					return false;
+				}
+				Bot.log("ambush: waiting");
+				hero.rest(false);
+				return true;
+			}
+			return issueHandle(hero, name() + "-hide", spot);
+		}
+
+		//out of the mark's sight, beside a closed door it will have to come through
+		private boolean hidden( Hero hero ) {
+			if (target.fieldOfView != null && target.fieldOfView.length == Dungeon.level.length()
+					&& target.fieldOfView[hero.pos]) {
+				return false;
+			}
+			return besideClosedDoor(hero.pos);
+		}
+
+		private boolean besideClosedDoor( int pos ) {
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int d = pos + offset;
+				if (d >= 0 && d < Dungeon.level.length()
+						&& Dungeon.level.map[d] == Terrain.DOOR) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private void acquire( Hero hero, BotPaths.Snapshot s ) {
+			int bestDist = Integer.MAX_VALUE;
+			for (Mob mob : hero.getVisibleEnemies()) {
+				if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
+				//only ambush what is actively chasing; anything else won't walk into it
+				if (mob.state != mob.HUNTING || mob == givenUpOn) continue;
+				if (Bot.isBlacklisted(mob.pos)) continue;
+				if (!hero.canAttack(mob) && !s.reachable(mob.pos)) continue;
+				if (hitChance(hero, mob) >= HIT_CHANCE_FLOOR) continue;
+				//already surprised: a plain attack gets the free hit without hiding
+				if (mob.surprisedBy(hero, true)) continue;
+				int dist = hero.canAttack(mob) ? 0 : s.dist[mob.pos];
+				if (dist < bestDist) {
+					bestDist = dist;
+					target = mob;
+				}
+			}
+		}
+
+		private void giveUp( String why ) {
+			Bot.log("ambush: giving up on %s, %s", target.name(), why);
+			givenUpOn = target;
+			target = null;
+			waits = 0;
+		}
+	}
+
 	//attack the closest hostile that is in reach or can be walked to
 	private static class Fight implements Behavior {
 		@Override
@@ -212,16 +377,32 @@ class BotBrain {
 
 		@Override
 		public boolean tryAct( Hero hero, BotPaths.Snapshot s ) {
+			//among enemies in reach, hit the one most likely to actually get hit:
+			//surprised targets can't dodge at all, wraith-likes are near-hopeless
 			Mob best = null;
+			float bestScore = -1;
+			for (Mob mob : hero.getVisibleEnemies()) {
+				if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
+				if (Bot.isBlacklisted(mob.pos)) continue;
+				if (!hero.canAttack(mob)) continue;
+				float score = mob.surprisedBy(hero, true) ? 2f : hitChance(hero, mob);
+				if (score > bestScore) {
+					bestScore = score;
+					best = mob;
+				}
+			}
+			if (best != null) {
+				return issueHandle(hero, name(), best.pos);
+			}
+
+			//nothing in reach: close in on the nearest reachable enemy
 			int bestDist = Integer.MAX_VALUE;
 			for (Mob mob : hero.getVisibleEnemies()) {
 				if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
 				if (Bot.isBlacklisted(mob.pos)) continue;
-				boolean inReach = hero.canAttack(mob);
-				if (!inReach && !s.reachable(mob.pos)) continue;
-				int dist = inReach ? 0 : s.dist[mob.pos];
-				if (dist < bestDist) {
-					bestDist = dist;
+				if (!s.reachable(mob.pos)) continue;
+				if (s.dist[mob.pos] < bestDist) {
+					bestDist = s.dist[mob.pos];
 					best = mob;
 				}
 			}
@@ -294,7 +475,7 @@ class BotBrain {
 			Heap best = null;
 			int bestDist = Integer.MAX_VALUE;
 			for (Heap heap : Dungeon.level.heaps.valueList()) {
-				if (!heap.seen || !worthLooting(heap) || Bot.isBlacklisted(heap.pos)) continue;
+				if (!heap.seen || !worthLooting(hero, heap) || Bot.isBlacklisted(heap.pos)) continue;
 				if (!s.reachable(heap.pos)) continue;
 				if (s.dist[heap.pos] < bestDist) {
 					bestDist = s.dist[heap.pos];
@@ -304,14 +485,17 @@ class BotBrain {
 			return best != null && issueHandle(hero, name(), best.pos);
 		}
 
-		private boolean worthLooting( Heap heap ) {
+		private boolean worthLooting( Hero hero, Heap heap ) {
 			switch (heap.type) {
 				case HEAP:
 				case CHEST:
-				case TOMB:
 				case SKELETON:
 				case REMAINS:
 					return true;
+				//graves spawn a pack of wraiths; only disturb them at fighting strength.
+				//Rest will top the hero up first, since tombs are skipped while hurt
+				case TOMB:
+					return hero.HP >= hero.HT * 0.7f;
 				//opening a locked chest without its key is a no-op loop; gate on the key
 				case LOCKED_CHEST:
 					return Notes.keyCount(new GoldenKey(Dungeon.depth)) > 0;
