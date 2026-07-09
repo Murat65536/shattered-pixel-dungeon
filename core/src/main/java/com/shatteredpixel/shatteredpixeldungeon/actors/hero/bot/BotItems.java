@@ -21,6 +21,7 @@
 
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot;
 
+import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
 import com.shatteredpixel.shatteredpixeldungeon.items.Waterskin;
@@ -30,8 +31,19 @@ import com.shatteredpixel.shatteredpixeldungeon.items.food.MysteryMeat;
 import com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion;
 import com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing;
 import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfDisintegration;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfFrost;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfLightning;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfMagicMissile;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfPrismaticLight;
+import com.shatteredpixel.shatteredpixeldungeon.items.weapon.SpiritBow;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MagesStaff;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MeleeWeapon;
+import com.shatteredpixel.shatteredpixeldungeon.items.weapon.missiles.MissileWeapon;
+
+import java.util.Arrays;
+import java.util.List;
 
 //inventory queries for the bot's survival decisions.
 //items are used through Item.execute(hero, action), which spends time and resumes the
@@ -137,6 +149,71 @@ public class BotItems {
 			}
 		}
 		return best;
+	}
+
+	//a ranged attack the hero could make right now: the item to use and the
+	//action that fires it. the item still has to be aimed at a target
+	public static class RangedAttack {
+		public final Item item;
+		public final String action;
+
+		RangedAttack( Item item, String action ) {
+			this.item = item;
+			this.action = action;
+		}
+	}
+
+	//wands whose zap just damages the target; utility wands (corruption, regrowth,
+	//warding...) need judgement the bot doesn't have, and area wands (fireblast,
+	//corrosion) spread hazards the bot would then have to path around
+	private static final List<Class<? extends Wand>> DAMAGE_WANDS = Arrays.asList(
+			WandOfMagicMissile.class, WandOfDisintegration.class, WandOfFrost.class,
+			WandOfPrismaticLight.class, WandOfLightning.class );
+
+	//the best ranged attack in the inventory, or null. renewable sources first:
+	//the spirit bow conjures its own arrows and wands recharge on their own,
+	//while every throw grinds down a missile's durability
+	public static RangedAttack rangedAttack(Hero hero) {
+		SpiritBow bow = hero.belongings.getItem(SpiritBow.class);
+		if (bow != null) {
+			return new RangedAttack(bow, SpiritBow.AC_SHOOT);
+		}
+
+		//the staff offers ZAP only while its imbued wand has a charge
+		if (hero.belongings.weapon instanceof MagesStaff
+				&& !hero.belongings.weapon.cursed
+				&& hero.belongings.weapon.actions(hero).contains(MagesStaff.AC_ZAP)) {
+			return new RangedAttack(hero.belongings.weapon, MagesStaff.AC_ZAP);
+		}
+
+		for (Wand wand : hero.belongings.getAllItems(Wand.class)) {
+			if (!wand.isIdentified() || wand.cursed || wand.curCharges <= 0) continue;
+			if (!DAMAGE_WANDS.contains(wand.getClass())) continue;
+			//lightning arcs through water, hero included
+			if (wand instanceof WandOfLightning && Dungeon.level.water[hero.pos]) continue;
+			return new RangedAttack(wand, Wand.AC_ZAP);
+		}
+
+		//hardest-hitting throwable the hero is strong enough for
+		MissileWeapon best = null;
+		for (MissileWeapon missile : hero.belongings.getAllItems(MissileWeapon.class)) {
+			if (missile.STRReq() > hero.STR()) continue;
+			if (lastThrowConfirms(missile)) continue;
+			if (best == null || missile.tier > best.tier) best = missile;
+		}
+		return best != null ? new RangedAttack(best, Item.AC_THROW) : null;
+	}
+
+	//mirrors MissileWeapon.doThrow's warning: the last throw of an upgraded or
+	//enchanted missile that is about to break opens a confirmation window instead
+	//of the targeting prompt, which would strand the bot's queued aim. such a
+	//missile is precious enough to keep anyway
+	private static boolean lastThrowConfirms(MissileWeapon missile) {
+		return ((missile.levelKnown && missile.level() > 0) || missile.hasGoodEnchant()
+					|| missile.masteryPotionBonus || missile.enchantHardened)
+				&& !missile.extraThrownLeft
+				&& missile.quantity() == 1
+				&& missile.durabilityLeft() <= missile.durabilityPerUse();
 	}
 
 	//same idea for armor. armor with the warrior's seal attached is never swapped:

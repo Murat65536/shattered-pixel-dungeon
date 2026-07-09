@@ -97,6 +97,7 @@ public class BotBrain {
 			new Ambush(),
 			new Cover(),
 			new Funnel(),
+			new Shoot(),
 			new Fight("fight", true),
 			new Eat(),
 			new Equip(),

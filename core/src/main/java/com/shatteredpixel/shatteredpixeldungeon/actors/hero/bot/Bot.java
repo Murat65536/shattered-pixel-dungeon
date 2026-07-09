@@ -127,11 +127,13 @@ public class Bot {
 		final Item item;
 		final String action;
 		final Item answer; //what to feed a selection prompt the use opens, if any
+		final int cell;    //what to feed a targeting prompt the use opens, or -1
 
-		UseIntent( Item item, String action, Item answer ) {
+		UseIntent( Item item, String action, Item answer, int cell ) {
 			this.item = item;
 			this.action = action;
 			this.answer = answer;
+			this.cell = cell;
 		}
 	}
 
@@ -140,7 +142,15 @@ public class Bot {
 	//actor thread; the hero stays parked until the render thread performs the use
 	public static boolean requestUse(Item item, String action, Item answer, String note) {
 		log("use -> %s", note);
-		pendingUse = new UseIntent(item, action, answer);
+		pendingUse = new UseIntent(item, action, answer, -1);
+		return true;
+	}
+
+	//as requestUse, but for uses that open a targeting prompt (throw, zap):
+	//the prompt is answered with the given cell
+	public static boolean requestUseAt(Item item, String action, int cell, String note) {
+		log("use -> %s", note);
+		pendingUse = new UseIntent(item, action, null, cell);
 		return true;
 	}
 
@@ -159,15 +169,24 @@ public class Bot {
 		pendingUse = null;
 		use.item.execute(hero, use.action);
 
-		//the use may have opened an item selection prompt: either the inventory
-		//pane's selector, or a WndBag window on small-screen UI
-		WndBag.ItemSelector selector = InventoryPane.currentSelector();
-		if (selector != null && use.answer != null && selector.itemSelectable(use.answer)) {
-			InventoryPane.answerSelection(use.answer);
-		} else if (selector == null) {
-			Window front = GameScene.frontWindow();
-			if (front instanceof WndBag) {
-				BotWindows.answerBagWindow((WndBag) front, use.answer);
+		if (use.cell != -1) {
+			//the use should have opened a targeting prompt; feed it the cell.
+			//if it didn't (the action fizzled), the prompt check keeps the cell
+			//from reaching the default listener, which would walk the hero there
+			if (GameScene.isSelectingCell()) {
+				GameScene.handleCell(use.cell);
+			}
+		} else {
+			//the use may have opened an item selection prompt: either the inventory
+			//pane's selector, or a WndBag window on small-screen UI
+			WndBag.ItemSelector selector = InventoryPane.currentSelector();
+			if (selector != null && use.answer != null && selector.itemSelectable(use.answer)) {
+				InventoryPane.answerSelection(use.answer);
+			} else if (selector == null) {
+				Window front = GameScene.frontWindow();
+				if (front instanceof WndBag) {
+					BotWindows.answerBagWindow((WndBag) front, use.answer);
+				}
 			}
 		}
 

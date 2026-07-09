@@ -1571,6 +1571,13 @@ public class GameScene extends PixelScene {
 		}
 	}
 	
+	//whether a targeting prompt (throw, zap, etc.) is currently awaiting a cell
+	public static boolean isSelectingCell() {
+		return cellSelector != null
+				&& cellSelector.listener != null
+				&& cellSelector.listener != defaultCellListener;
+	}
+
 	public static boolean cancelCellSelector() {
 		if (cellSelector.listener != null && cellSelector.listener != defaultCellListener) {
 			cellSelector.resetKeyHold();
