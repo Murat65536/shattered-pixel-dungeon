@@ -22,6 +22,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
@@ -134,13 +135,12 @@ class BotPaths {
 		return best;
 	}
 
-	//how far the bot is willing to walk to set up a door ambush
-	private static final int MAX_AMBUSH_TREK = 12;
-
-	//nearest cell to lie in wait on: walkable, out of the mob's sight, beside a
-	//closed door (which blocks its line of sight) but not in the doorway itself.
-	//-1 when no such spot is worth the walk
-	static int ambushSpot( Hero hero, Mob mob, Snapshot s ) {
+	//nearest cell to lie in wait on: walkable, beside a door, and hidden from the
+	//mob once that door is shut. the door may still be standing open: doors close
+	//behind whoever walks over them, so a spot on the far side of an open door
+	//counts as long as the hero's way there actually crosses it.
+	//-1 when none within maxTrek steps (the caller decides what walk is worth it)
+	static int ambushSpot( Hero hero, Mob mob, Snapshot s, int maxTrek ) {
 		Level level = Dungeon.level;
 		int best = -1;
 		int bestDist = Integer.MAX_VALUE;
@@ -150,25 +150,63 @@ class BotPaths {
 			int terrain = level.map[c];
 			if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
 
-			if (mob.fieldOfView != null && mob.fieldOfView.length == level.length()
-					&& mob.fieldOfView[c]) {
-				continue;
-			}
-
-			boolean besideDoor = false;
-			for (int offset : PathFinder.NEIGHBOURS8) {
-				int d = c + offset;
-				if (d >= 0 && d < s.dist.length && level.map[d] == Terrain.DOOR) {
-					besideDoor = true;
-					break;
-				}
-			}
-			if (!besideDoor) continue;
+			if (!worksAsAmbush(hero, mob, c)) continue;
 
 			best = c;
 			bestDist = s.dist[c];
 		}
-		return bestDist <= MAX_AMBUSH_TREK ? best : -1;
+		return bestDist <= maxTrek ? best : -1;
+	}
+
+	private static boolean worksAsAmbush( Hero hero, Mob mob, int c ) {
+		Level level = Dungeon.level;
+		for (int offset : PathFinder.NEIGHBOURS8) {
+			int d = c + offset;
+			if (d < 0 || d >= level.length()) continue;
+
+			int terrain = level.map[d];
+			if (terrain == Terrain.DOOR) {
+				//door already shut: hidden means simply out of the mob's sight
+				if (mob.fieldOfView == null || mob.fieldOfView.length != level.length()
+						|| !mob.fieldOfView[c]) {
+					return true;
+				}
+			} else if (terrain == Terrain.OPEN_DOOR
+					&& level.heaps.get(d) == null
+					&& (Actor.findChar(d) == null || Actor.findChar(d) == hero)) {
+				//open but nothing propping it: it shuts once the hero crosses it.
+				//the spot works if that hides it from the mob, and getting there
+				//from here really does cross it - trivially so when the hero is
+				//standing in the doorway itself (stepping off shuts it)
+				if (!lineFree(mob.pos, c, d)
+						&& (hero.pos == d || !lineFree(hero.pos, c, d))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	//straight-line sight approximation: walks a bresenham line and reports whether
+	//it is clear of los-blocking terrain, treating closedDoor as shut. cruder than
+	//the game's shadowcasting, but only used to judge cells right next to a door
+	private static boolean lineFree( int from, int to, int closedDoor ) {
+		Level level = Dungeon.level;
+		int w = level.width();
+		int x = from % w, y = from / w;
+		int x1 = to % w, y1 = to / w;
+		int dx = Math.abs(x1 - x), dy = Math.abs(y1 - y);
+		int sx = x < x1 ? 1 : -1, sy = y < y1 ? 1 : -1;
+		int err = dx - dy;
+		while (x != x1 || y != y1) {
+			int e2 = 2 * err;
+			if (e2 > -dy) { err -= dy; x += sx; }
+			if (e2 < dx)  { err += dx; y += sy; }
+			int cell = x + y * w;
+			if (cell == to) break;
+			if (cell == closedDoor || level.losBlocking[cell]) return false;
+		}
+		return true;
 	}
 
 	//honest-mode fallback: nearest walkable cell the bot has not searched from yet
