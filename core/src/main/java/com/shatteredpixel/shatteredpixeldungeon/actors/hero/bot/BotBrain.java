@@ -67,10 +67,11 @@ class BotBrain {
 			new Heal(),
 			new Retreat(),
 			new Ambush(),
-			new Fight(),
+			new Fight("fight", true),
 			new Eat(),
 			new Equip(),
 			new Loot(),
+			new Fight("cull", false),
 			new Unlock(),
 			new Explore(),
 			new DrinkId(),
@@ -521,16 +522,31 @@ class BotBrain {
 		}
 	}
 
-	//attack the closest hostile that is in reach or can be walked to
+	//attack the closest hostile that is in reach or can be walked to. sits in the
+	//chain twice: awake enemies preempt everything ("fight"), but a sleeping one
+	//isn't bothering anybody, so walking over to it can wait until after looting
+	//("cull") - otherwise chasing it through sight-breaking grass ping-pongs with
+	//Loot forever. an adjacent sleeper is still struck at once: that's a free
+	//surprise hit, not a trek
 	private static class Fight implements Behavior {
+
+		private final String name;
+		private final boolean threatsOnly;
+
+		Fight( String name, boolean threatsOnly ) {
+			this.name = name;
+			this.threatsOnly = threatsOnly;
+		}
+
 		@Override
 		public String name() {
-			return "fight";
+			return name;
 		}
 
 		@Override
 		public boolean essential() {
-			return true;
+			//in descend-only mode sleeping mobs are best left sleeping
+			return threatsOnly;
 		}
 
 		@Override
@@ -558,6 +574,7 @@ class BotBrain {
 			int bestDist = Integer.MAX_VALUE;
 			for (Mob mob : hero.getVisibleEnemies()) {
 				if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
+				if (threatsOnly && mob.state == mob.SLEEPING) continue;
 				if (waterBound(mob)) continue;
 				if (Bot.isBlacklisted(mob.pos)) continue;
 				if (!s.reachable(mob.pos)) continue;
