@@ -33,18 +33,14 @@ public class Funnel extends BotBrain.Behavior {
     public boolean tryAct(Hero hero, BotPaths.Snapshot s ) {
         //only kicks in against a pack that is actively coming for the hero
         int hunters = 0;
-        boolean swarm = false;
         for (Mob mob : hero.getVisibleEnemies()) {
             if (mob.alignment != Char.Alignment.ENEMY || mob.state == mob.PASSIVE) continue;
             if (mob.state != mob.HUNTING) continue;
             if (waterBound(mob)) continue;
             if (!hero.canAttack(mob) && !s.reachable(mob.pos)) continue;
-            if (mob instanceof Swarm) {
-                swarm = true;
-            }
             hunters++;
         }
-        if (!swarm && hunters < 2) {
+        if (hunters < 2) {
             waits = 0;
             return false;
         }

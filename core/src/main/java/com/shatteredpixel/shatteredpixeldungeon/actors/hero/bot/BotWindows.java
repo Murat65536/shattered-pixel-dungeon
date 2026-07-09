@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.ui.Window;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndBag;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndOptions;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndResurrect;
+import com.shatteredpixel.shatteredpixeldungeon.windows.WndUpgrade;
 import com.watabou.noosa.Game;
 import com.watabou.noosa.Group;
 import com.watabou.utils.Random;
@@ -83,6 +84,19 @@ class BotWindows {
 
 		if (window instanceof WndOptions) {
 			pickOption((WndOptions) window);
+			return;
+		}
+
+		//upgrade confirmation: must confirm, never dismiss — both back-press and the
+		//cancel button re-open the item selector, which would loop with the bot's own
+		//answer forever. the confirm button enables once the hero is ready, so wait
+		//for it rather than escalating (the 10s stuck guard still backstops this)
+		if (window instanceof WndUpgrade) {
+			Button confirm = field(window, WndUpgrade.class, "btnUpgrade");
+			if (confirm != null && confirm.active) {
+				Bot.log("windows: confirming upgrade");
+				click(confirm);
+			}
 			return;
 		}
 
