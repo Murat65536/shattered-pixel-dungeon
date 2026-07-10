@@ -114,7 +114,6 @@ public class BotBrain {
 			new Unlock(),
 			new Explore(),
 			new Rest(),
-			new Scout(),
 			new Descend(),
 			new Search()
 	};

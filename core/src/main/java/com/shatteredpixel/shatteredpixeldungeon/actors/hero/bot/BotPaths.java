@@ -42,6 +42,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Piranha;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.special.SentryRoom;
+import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.special.ToxicGasRoom;
 import com.shatteredpixel.shatteredpixeldungeon.levels.features.LevelTransition;
 import com.shatteredpixel.shatteredpixeldungeon.levels.traps.Trap;
 import com.watabou.utils.PathFinder;
@@ -179,63 +180,90 @@ public class BotPaths {
 
 	//where hazardous blobs sit, limited to what the hero can actually see or
 	//remembers seeing - gas in a never-seen corridor is not knowledge the bot
-	//should act on, but gas that merely left his sight is not gone: a cell last
-	//seen covered stays hazardous until a later look shows it clear. without
-	//the memory, stepping out of a gas-filled vault (ToxicGasRoom keeps itself
-	//gassed forever) erased all knowledge of it, and the bot walked right back
-	//in after its loot. the hero's own cell always counts as seen: whatever is
-	//there, he can feel
+	//should act on, but gas that merely left his sight is not gone either. cells
+	//out of view carry the remembered cloud, decayed forward each turn by the
+	//same rule real gas disperses by (see decayGasMemory), so they stay off-limits
+	//about as long as the real cloud lasts and then free up on their own. the
+	//hero's own cell always counts as seen: whatever is there, he can feel
 	private static boolean[] hazards( Hero hero ) {
 		Level level = Dungeon.level;
-		boolean[] hazard = new boolean[level.length()];
+		int length = level.length();
+		boolean[] hazard = new boolean[length];
+		int[] strength = new int[length];
 		for (Class<? extends Blob> type : HAZARD_BLOBS) {
 			Blob blob = level.blobs.get(type);
 			if (blob == null || blob.volume <= 0 || blob.cur == null) continue;
-			for (int c = 0; c < hazard.length; c++) {
+			for (int c = 0; c < length; c++) {
 				if (blob.cur[c] > 0 && (level.heroFOV[c] || c == hero.pos)) {
 					hazard[c] = true;
+					strength[c] = Math.max(strength[c], blob.cur[c]);
 				}
 			}
 		}
-		boolean[] memory = Bot.hazardMemory(level.length());
-		float[] stamp = Bot.hazardStamp();
-		float now = Actor.now();
-		for (int c = 0; c < hazard.length; c++) {
+
+		int[] memory = Bot.gasMemory(length);
+		boolean[] vents = Bot.gasVents();
+		decayGasMemory(level, memory, vents);
+
+		//truth beats prediction wherever the hero can see; elsewhere whatever is
+		//left of the remembered cloud keeps its cells off-limits
+		Blob venting = level.blobs.get(ToxicGasRoom.ToxicGasSeed.class);
+		boolean ventsLive = venting != null && venting.volume > 0 && venting.cur != null;
+		for (int c = 0; c < length; c++) {
 			if (level.heroFOV[c] || c == hero.pos) {
-				memory[c] = hazard[c];
-				stamp[c] = now;
-			} else if (memory[c]) {
+				memory[c] = strength[c];
+				if (ventsLive && venting.cur[c] > 0) vents[c] = true;
+			} else if (memory[c] > 0) {
 				hazard[c] = true;
 			}
 		}
 		return hazard;
 	}
 
-	//nearest cell to go re-check remembered gas from: walkable, safe, and beside
-	//a cell whose memory has gone stale (last looked at more than staleAge turns
-	//ago - most clouds disperse well within that). standing next to it brings it
-	//back into view, clearing or re-confirming the memory, so stale gas over the
-	//stairs or a heap cannot block the bot forever. -1 when nothing is stale
-	public static int scoutSpot( Hero hero, Snapshot s, float staleAge ) {
-		Level level = Dungeon.level;
-		boolean[] memory = Bot.hazardMemory(level.length());
-		float[] stamp = Bot.hazardStamp();
-		float now = Actor.now();
-		int best = -1;
-		int bestDist = Integer.MAX_VALUE;
-		for (int c = 0; c < s.dist.length; c++) {
-			if (!memory[c] || level.heroFOV[c] || now - stamp[c] < staleAge) continue;
-			for (int offset : PathFinder.NEIGHBOURS8) {
-				int n = c + offset;
-				if (n < 0 || n >= s.dist.length) continue;
-				if (n == hero.pos || !s.pass[n] || s.hazard[n] || Bot.isBlacklisted(n)) continue;
-				if (s.dist[n] < bestDist) {
-					bestDist = s.dist[n];
-					best = n;
-				}
+	//gas a toxic vault's vents keep themselves topped up to: ToxicGasRoom seeds
+	//12 more whenever a vent cell's gas drops to 9x12 or less
+	private static final int VENT_GAS = 108;
+
+	//advance the remembered cloud to the current game time: one step per whole
+	//elapsed turn of the rule Blob.evolve spreads and fades gas by - each open
+	//cell becomes the average of itself and its open cardinal neighbors, minus
+	//one. known vault vents re-gas themselves, like the real thing, so a seen
+	//ToxicGasRoom stays remembered as hazardous forever; everything else thins
+	//out and expires on roughly the clock the real cloud does. fire, freezing
+	//and electricity really fade by flat -1 a turn instead of dispersing, but
+	//they are weak and short-lived and this errs on the careful side for them
+	private static void decayGasMemory( Level level, int[] memory, boolean[] vents ) {
+		int steps = (int)(Actor.now() - Bot.gasSimTime());
+		if (steps <= 0) return;
+		Bot.gasSimAdvanced(steps);
+		//normally 1-2; a long gap only happens when the bot was toggled off for a
+		//while, and by 100 steps the field has either emptied (the loop below
+		//breaks) or settled into the steady state its vents hold it at
+		steps = Math.min(steps, 100);
+
+		int length = level.length();
+		int w = level.width();
+		boolean[] solid = level.solid;
+		for (int step = 0; step < steps; step++) {
+			int volume = 0;
+			int[] next = new int[length];
+			for (int c = w; c < length - w; c++) {
+				int x = c % w;
+				if (x == 0 || x == w-1 || solid[c]) continue;
+				int count = 1;
+				int sum = memory[c];
+				if (!solid[c-1]) { sum += memory[c-1]; count++; }
+				if (!solid[c+1]) { sum += memory[c+1]; count++; }
+				if (!solid[c-w]) { sum += memory[c-w]; count++; }
+				if (!solid[c+w]) { sum += memory[c+w]; count++; }
+				int value = sum >= count ? (sum / count) - 1 : 0;
+				if (vents[c]) value = Math.max(value, VENT_GAS);
+				next[c] = value;
+				volume += value;
 			}
+			System.arraycopy(next, 0, memory, 0, length);
+			if (volume == 0) break;
 		}
-		return best;
 	}
 
 	//nearest reachable cell clear of hazardous blobs, ties broken toward cells

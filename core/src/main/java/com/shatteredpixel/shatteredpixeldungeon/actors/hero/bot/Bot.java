@@ -234,22 +234,36 @@ public class Bot {
 	private static final HashMap<Integer, Float> blacklist = new HashMap<>();
 	private static final HashSet<Integer> searchedCells = new HashSet<>();
 
-	//hazardous clouds the hero has seen, remembered after they leave his sight
-	//(see BotPaths.hazards); stamp holds the game time of the last look at each
-	//cell, so stale memories can be re-scouted (see the Scout behavior)
-	private static boolean[] hazardMemory = null;
-	private static float[] hazardStamp = null;
+	//hazardous clouds the hero has seen, remembered as per-cell gas strength
+	//after they leave his sight. BotPaths keeps the remembered cloud moving with
+	//the same spread-and-fade step real blobs evolve by (see decayGasMemory), so
+	//the memory expires on the clock the real cloud does and the bot knows when
+	//a cell will be safe again without walking back for a look. vents mark the
+	//cells of a toxic vault (ToxicGasRoom), which re-gas themselves forever and
+	//keep the remembered cloud around them alive
+	private static int[] gasMemory = null;
+	private static boolean[] gasVents = null;
+	private static float gasSimTime = 0;
 
-	static boolean[] hazardMemory( int length ) {
-		if (hazardMemory == null || hazardMemory.length != length) {
-			hazardMemory = new boolean[length];
-			hazardStamp = new float[length];
+	static int[] gasMemory( int length ) {
+		if (gasMemory == null || gasMemory.length != length) {
+			gasMemory = new int[length];
+			gasVents = new boolean[length];
+			gasSimTime = Actor.now();
 		}
-		return hazardMemory;
+		return gasMemory;
 	}
 
-	static float[] hazardStamp() {
-		return hazardStamp;
+	static boolean[] gasVents() {
+		return gasVents;
+	}
+
+	static float gasSimTime() {
+		return gasSimTime;
+	}
+
+	static void gasSimAdvanced( int steps ) {
+		gasSimTime += steps;
 	}
 
 	//returns false when the guard consumed this decision (forced a wait or disabled)
@@ -259,8 +273,8 @@ public class Bot {
 			guardBranch = Dungeon.branch;
 			blacklist.clear();
 			searchedCells.clear();
-			hazardMemory = null;
-			hazardStamp = null;
+			gasMemory = null;
+			gasVents = null;
 			depthDecisions = 0;
 			idleStreak = 0;
 			lastSig = null;
