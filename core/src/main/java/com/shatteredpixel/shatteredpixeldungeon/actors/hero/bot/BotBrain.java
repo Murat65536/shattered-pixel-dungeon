@@ -100,9 +100,9 @@ public class BotBrain {
 			new Scrolls(),
 			new Loot(),
 			new Fight("cull", false),
-			new Unlock(),
 			new Rest(),
 			new Descend(),
+			new Unlock(),
 			new Explore(),
 			new Search()
 	};

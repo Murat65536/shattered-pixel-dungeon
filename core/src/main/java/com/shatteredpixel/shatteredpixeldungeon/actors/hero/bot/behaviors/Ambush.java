@@ -17,11 +17,9 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.watabou.utils.PathFinder;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-//against hard-to-hit enemies: hide behind a closed door and strike as they step through blind - surprise never misses
 public class Ambush extends BotBrain.Behavior {
 
     //hard ceiling on the walk to a hiding spot
@@ -33,9 +31,6 @@ public class Ambush extends BotBrain.Behavior {
     //patience caps before giving up on a mark
     private static final int MAX_WAITS = 12;
     private static final int MAX_HIDE_MOVES = 12;
-
-    //trace every decision against the current mark to stdout
-    public static boolean DEBUG = false;
 
     private Mob target = null;
     private Mob givenUpOn = null;
@@ -345,7 +340,6 @@ public class Ambush extends BotBrain.Behavior {
             int[] path = route(c, s);
             if (path == null) continue;
             if (!worksAsAmbush(hero, mob, c, s, path)) continue;
-            if (!enduresTrek(hero, mob, path)) continue;
             return c;
         }
         return -1;
@@ -432,64 +426,5 @@ public class Ambush extends BotBrain.Behavior {
             if (p == cell) return true;
         }
         return false;
-    }
-
-    //whether the walk is survivable: expected melee damage from the mark and every other hunting chaser
-    private static boolean enduresTrek( Hero hero, Mob mark, int[] path ) {
-        float budget = MAX_HP_SPEND * hero.HP;
-        float bill = swingBill(hero, mark, path);
-        for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob == mark || !threat(mob) || mob.state != mob.HUNTING) continue;
-            bill += swingBill(hero, mob, path);
-            if (bill > budget) return false;
-        }
-        return bill <= budget;
-    }
-
-    //expected damage this chaser deals over the walk
-    private static float swingBill( Hero hero, Mob mob, int[] path ) {
-        int swings = trekSwings(hero, mob, path);
-        if (swings == 0) return 0;
-        float q = Math.max(0.05f, hitChance(mob, hero));
-        return swings * q * avgDamage(mob);
-    }
-
-    //swings a chaser gets during the walk, simulated on the game clock: swing when adjacent, chase step otherwise
-    private static int trekSwings( Hero hero, Mob mob, int[] path ) {
-        float heroSpeed = hero.speed();
-        float mobSpeed = mob.speed();
-        float delay = mob.attackDelay();
-        if (heroSpeed <= 0 || mobSpeed <= 0 || delay <= 0) return Integer.MAX_VALUE;
-
-        Level level = Dungeon.level;
-        int mobCell = mob.pos;
-        int swings = 0;
-        float heroTime = 0, mobTime = 0;
-        for (int i = 1; i < path.length; i++) {
-            int heroCell = path[i];
-            heroTime += 1f / heroSpeed;
-            while (mobTime < heroTime) {
-                if (level.adjacent(mobCell, heroCell)) {
-                    swings++;
-                    mobTime += delay;
-                    continue;
-                }
-                mobTime += 1f / mobSpeed;
-                int bestStep = mobCell;
-                int bestDist = level.distance(mobCell, heroCell);
-                for (int offset : PathFinder.NEIGHBOURS8) {
-                    int n = mobCell + offset;
-                    if (n < 0 || n >= level.length() || n == heroCell
-                            || !level.passable[n]) continue;
-                    int d = level.distance(n, heroCell);
-                    if (d < bestDist) {
-                        bestDist = d;
-                        bestStep = n;
-                    }
-                }
-                mobCell = bestStep;
-            }
-        }
-        return swings;
     }
 }
