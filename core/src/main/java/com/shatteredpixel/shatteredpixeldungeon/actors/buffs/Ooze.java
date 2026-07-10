@@ -86,6 +86,10 @@ public class Ooze extends Buff {
 		left += duration;
 	}
 
+	public float left() {
+		return left;
+	}
+
 	@Override
 	public boolean act() {
 		//washing away happens before debuff effects if debuff has gotten to act

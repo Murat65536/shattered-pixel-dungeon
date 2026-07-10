@@ -98,6 +98,7 @@ public class BotBrain {
 	private static final Behavior[] CHAIN = new Behavior[]{
 			new Heal(),
 			new Escape(),
+			new Douse(),
 			new Retreat(),
 			new Cover(),
 			new Shoot(),

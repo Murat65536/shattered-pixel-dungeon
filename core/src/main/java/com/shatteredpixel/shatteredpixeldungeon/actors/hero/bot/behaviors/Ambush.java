@@ -314,41 +314,50 @@ public class Ambush extends BotBrain.Behavior {
             if (d < 0 || d >= level.length()) continue;
 
             int terrain = level.map[d];
-            if (terrain == Terrain.DOOR) {
-                //door already shut: hidden means simply out of the mob's sight
-                if (mob.fieldOfView == null || mob.fieldOfView.length != level.length()
-                        || !mob.fieldOfView[c]) {
-                    return true;
-                }
-            } else if (terrain == Terrain.OPEN_DOOR
+            boolean closed = terrain == Terrain.DOOR;
+            //open but nothing propping it: it shuts once the hero crosses it
+            boolean shuts = terrain == Terrain.OPEN_DOOR
                     && level.heaps.get(d) == null
-                    && (Actor.findChar(d) == null || Actor.findChar(d) == hero)) {
-                //open but nothing propping it: it shuts once the hero crosses it.
-                //hidden means the far side of the door from the mob - and "side"
-                //is set by the wall the door sits in, so compare along the
-                //passage axis only. walls east/west of the door mean the passage
-                //runs north-south (sides split by y); otherwise it runs east-west
-                int w = level.width();
-                boolean passageVertical = level.solid[d - 1] && level.solid[d + 1];
-                int mobSide, cSide;
-                if (passageVertical) {
-                    mobSide = Integer.signum(mob.pos / w - d / w);
-                    cSide   = Integer.signum(c / w - d / w);
-                } else {
-                    mobSide = Integer.signum(mob.pos % w - d % w);
-                    cSide   = Integer.signum(c % w - d % w);
-                }
-                //the race for the door: the hero must cross it and step off (only
-                //then does it shut) before the mark can be there. the mark's
-                //straight-line steps are the best it could possibly manage, so
-                //beating that bound means winning for sure; a tie loses - the
-                //mark reaches the doorway with the hero still in sight
-                boolean doorShutsFirst = level.distance(mob.pos, d) / mob.speed()
-                        > s.dist[c] / hero.speed();
-                if (mobSide != 0 && cSide != 0 && mobSide != cSide
-                        && doorShutsFirst && s.dist[d] < s.dist[c]) {
-                    return true;
-                }
+                    && (Actor.findChar(d) == null || Actor.findChar(d) == hero);
+            if (!closed && !shuts) continue;
+
+            //hidden means the far side of the door from the mark - out of its
+            //sight alone isn't enough (a mob's fov is short-ranged and a turn
+            //stale, so a spot on the mark's own side can read as unseen; walking
+            //there just parades past it). "side" is set by the wall the door
+            //sits in, so compare along the passage axis only: walls east/west of
+            //the door mean the passage runs north-south (sides split by y);
+            //otherwise it runs east-west
+            int w = level.width();
+            boolean passageVertical = level.solid[d - 1] && level.solid[d + 1];
+            int mobSide, cSide;
+            if (passageVertical) {
+                mobSide = Integer.signum(mob.pos / w - d / w);
+                cSide   = Integer.signum(c / w - d / w);
+            } else {
+                mobSide = Integer.signum(mob.pos % w - d % w);
+                cSide   = Integer.signum(c % w - d % w);
+            }
+            if (mobSide == 0 || cSide == 0 || mobSide == cSide) continue;
+
+            //a shut door the mark can still see past (another opening, or the
+            //hero's own side of it) is no hiding place
+            if (closed && sees(mob, c)) continue;
+
+            //already shut and the hero is on its far side: nothing to race
+            if (closed && s.dist[d] >= s.dist[c]) {
+                return true;
+            }
+
+            //the hero still has to cross the door (it shuts only on stepping
+            //off), so the race is on: the mark's straight-line steps are the
+            //best it could possibly manage, so beating that bound means winning
+            //for sure; a tie loses - the mark reaches the doorway with the hero
+            //still in sight
+            boolean doorShutsFirst = level.distance(mob.pos, d) / mob.speed()
+                    > s.dist[c] / hero.speed();
+            if (doorShutsFirst && s.dist[d] < s.dist[c]) {
+                return true;
             }
         }
         return false;

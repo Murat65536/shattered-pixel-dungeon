@@ -38,6 +38,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
+import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Piranha;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.shatteredpixel.shatteredpixeldungeon.levels.rooms.special.SentryRoom;
@@ -258,6 +259,39 @@ public class BotPaths {
 				bestDist = s.dist[c];
 				bestAdj = adj;
 			}
+		}
+		return best;
+	}
+
+	//nearest reachable water cell to wash a debuff off in: walkable, safe, free,
+	//and not within lunging range of a visible piranha (they swim at double speed;
+	//wading in next to one trades the debuff for something worse). -1 when none;
+	//whether the nearest one is close enough to be worth it is the caller's call
+	public static int waterCell( Hero hero, Snapshot s ) {
+		Level level = Dungeon.level;
+		List<Mob> piranhas = new ArrayList<>();
+		for (Mob mob : level.mobs) {
+			if (mob instanceof Piranha && mob.isAlive() && level.heroFOV[mob.pos]) {
+				piranhas.add(mob);
+			}
+		}
+		int best = -1;
+		int bestDist = Integer.MAX_VALUE;
+		for (int c = 0; c < s.dist.length; c++) {
+			if (!level.water[c] || c == hero.pos) continue;
+			if (!s.pass[c] || s.hazard[c] || s.dist[c] >= bestDist
+					|| Bot.isBlacklisted(c)) continue;
+			if (Actor.findChar(c) != null) continue;
+			boolean risky = false;
+			for (Mob piranha : piranhas) {
+				if (level.distance(piranha.pos, c) <= 6) {
+					risky = true;
+					break;
+				}
+			}
+			if (risky) continue;
+			best = c;
+			bestDist = s.dist[c];
 		}
 		return best;
 	}
