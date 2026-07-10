@@ -7,7 +7,6 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
-import com.watabou.utils.Random;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -155,19 +154,6 @@ public class Cover extends BotBrain.Behavior {
     //uses Char.hitChance() to get the exact hit probability
     private static float rangedHitChance( Mob mob, Hero hero ) {
         return Char.hitChance(mob, hero, 2f);
-    }
-
-    //average of a handful of damage rolls, on a private seeded generator so the
-    //game's own rng stream is untouched and the estimate is stable between turns
-    private static float avgDamage( Mob mob ) {
-        Random.pushGenerator(mob.id());
-        float total = 0;
-        final int samples = 10;
-        for (int i = 0; i < samples; i++) {
-            total += mob.damageRoll();
-        }
-        Random.popGenerator();
-        return Math.max(1f, total / samples);
     }
 
     private void reset() {

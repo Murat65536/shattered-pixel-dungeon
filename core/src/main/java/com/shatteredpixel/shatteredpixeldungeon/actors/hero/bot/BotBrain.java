@@ -21,35 +21,12 @@
 
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot;
 
-import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
-import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
-import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Healing;
-import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Hunger;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors.*;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Piranha;
-import com.shatteredpixel.shatteredpixeldungeon.items.Heap;
-import com.shatteredpixel.shatteredpixeldungeon.items.KindOfWeapon;
-import com.shatteredpixel.shatteredpixeldungeon.items.Waterskin;
-import com.shatteredpixel.shatteredpixeldungeon.items.armor.Armor;
-import com.shatteredpixel.shatteredpixeldungeon.items.food.Food;
-import com.shatteredpixel.shatteredpixeldungeon.items.keys.CrystalKey;
-import com.shatteredpixel.shatteredpixeldungeon.items.keys.GoldenKey;
-import com.shatteredpixel.shatteredpixeldungeon.items.keys.IronKey;
-import com.shatteredpixel.shatteredpixeldungeon.items.Item;
-import com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion;
-import com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfHealing;
-import com.shatteredpixel.shatteredpixeldungeon.items.potions.PotionOfStrength;
-import com.shatteredpixel.shatteredpixeldungeon.items.rings.RingOfForce;
-import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll;
-import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfIdentify;
-import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfUpgrade;
-import com.shatteredpixel.shatteredpixeldungeon.items.weapon.melee.MeleeWeapon;
-import com.shatteredpixel.shatteredpixeldungeon.journal.Notes;
-import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
-import com.watabou.utils.PathFinder;
+import com.watabou.utils.Random;
 
 //the bot's decision maker: first behavior in the chain that can act, acts.
 //every decision must either spend game time or be caught by Bot's guards
@@ -77,6 +54,18 @@ public class BotBrain {
 		//uses Char.hitChance() to get the exact hit probability
 		protected static float hitChance( Char char1, Char char2 ) {
 			return Char.hitChance(char1, char2, 1f);
+		}
+
+		//average of a few damage rolls on a private seeded generator: stable between turns, game rng untouched
+		protected static float avgDamage( Mob mob ) {
+			Random.pushGenerator(mob.id());
+			float total = 0;
+			final int samples = 10;
+			for (int i = 0; i < samples; i++) {
+				total += mob.damageRoll();
+			}
+			Random.popGenerator();
+			return Math.max(1f, total / samples);
 		}
 
 		//piranhas are bound to the water and cannot follow the hero onto land: they
@@ -112,9 +101,9 @@ public class BotBrain {
 			new Loot(),
 			new Fight("cull", false),
 			new Unlock(),
-			new Explore(),
 			new Rest(),
 			new Descend(),
+			new Explore(),
 			new Search()
 	};
 
