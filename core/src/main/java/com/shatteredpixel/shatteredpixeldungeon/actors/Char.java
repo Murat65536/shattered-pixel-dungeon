@@ -621,6 +621,68 @@ public abstract class Char extends Actor {
 		return hit(attacker, defender, magic ? 2f : 1f, magic);
 	}
 
+	public static float accuracyModifier( Char attacker ) {
+		float mod = 1f;
+		if (attacker.buff(Bless.class) != null) mod *= 1.25f;
+		if (attacker.buff(  Hex.class) != null) mod *= 0.8f;
+		if (attacker.buff( Daze.class) != null) mod *= 0.5f;
+		for (ChampionEnemy buff : attacker.buffs(ChampionEnemy.class)){
+			mod *= buff.evasionAndAccuracyFactor();
+		}
+		mod *= AscensionChallenge.statModifier(attacker);
+		if (Dungeon.hero.heroClass != HeroClass.CLERIC
+				&& Dungeon.hero.hasTalent(Talent.BLESS)
+				&& attacker.alignment == Alignment.ALLY){
+			mod *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
+		}
+		return mod;
+	}
+
+	public static float evasionModifier( Char defender ) {
+		float mod = 1f;
+		if (defender.buff(Bless.class) != null) mod *= 1.25f;
+		if (defender.buff(  Hex.class) != null) mod *= 0.8f;
+		if (defender.buff( Daze.class) != null) mod *= 0.5f;
+		for (ChampionEnemy buff : defender.buffs(ChampionEnemy.class)){
+			mod *= buff.evasionAndAccuracyFactor();
+		}
+		mod *= AscensionChallenge.statModifier(defender);
+		if (Dungeon.hero.heroClass != HeroClass.CLERIC
+				&& Dungeon.hero.hasTalent(Talent.BLESS)
+				&& defender.alignment == Alignment.ALLY){
+			mod *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
+		}
+		mod *= FerretTuft.evasionMultiplier();
+		return mod;
+	}
+
+	public static float hitChance( Char attacker, Char defender, float accMulti ) {
+		float acuStat = attacker.attackSkill( defender );
+		float defStat = defender.defenseSkill( attacker );
+
+		//invisible chars always hit (for the hero this is surprise attacking)
+		if (attacker.invisible > 0 && attacker.canSurpriseAttack()){
+			acuStat = INFINITE_ACCURACY;
+		}
+
+		if (defender.buff(MonkEnergy.MonkAbility.Focus.FocusBuff.class) != null){
+			defStat = INFINITE_EVASION;
+		}
+
+		if (defStat >= INFINITE_EVASION){
+			return 0f;
+		} else if (acuStat >= INFINITE_ACCURACY){
+			return 1f;
+		}
+
+		float acuMax = acuStat * accuracyModifier( attacker ) * accMulti;
+		float defMax = defStat * evasionModifier( defender );
+
+		if (acuMax <= 0) return 0f;
+		if (defMax <= 0) return 1f;
+		return acuMax >= defMax ? 1f - defMax / (2f * acuMax) : acuMax / (2f * defMax);
+	}
+
 	public static boolean hit( Char attacker, Char defender, float accMulti, boolean magic ) {
 		float acuStat = attacker.attackSkill( defender );
 		float defStat = defender.defenseSkill( attacker );
@@ -648,37 +710,8 @@ public abstract class Char extends Actor {
 			return true;
 		}
 
-		float acuRoll = Random.Float( acuStat );
-		if (attacker.buff(Bless.class) != null) acuRoll *= 1.25f;
-		if (attacker.buff(  Hex.class) != null) acuRoll *= 0.8f;
-		if (attacker.buff( Daze.class) != null) acuRoll *= 0.5f;
-		for (ChampionEnemy buff : attacker.buffs(ChampionEnemy.class)){
-			acuRoll *= buff.evasionAndAccuracyFactor();
-		}
-		acuRoll *= AscensionChallenge.statModifier(attacker);
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.BLESS)
-				&& attacker.alignment == Alignment.ALLY){
-			// + 3%/5%
-			acuRoll *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
-		}
-		acuRoll *= accMulti;
-
-		float defRoll = Random.Float( defStat );
-		if (defender.buff(Bless.class) != null) defRoll *= 1.25f;
-		if (defender.buff(  Hex.class) != null) defRoll *= 0.8f;
-		if (defender.buff( Daze.class) != null) defRoll *= 0.5f;
-		for (ChampionEnemy buff : defender.buffs(ChampionEnemy.class)){
-			defRoll *= buff.evasionAndAccuracyFactor();
-		}
-		defRoll *= AscensionChallenge.statModifier(defender);
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.BLESS)
-				&& defender.alignment == Alignment.ALLY){
-			// + 3%/5%
-			defRoll *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
-		}
-		defRoll *= FerretTuft.evasionMultiplier();
+		float acuRoll = Random.Float( acuStat ) * accuracyModifier( attacker ) * accMulti;
+		float defRoll = Random.Float( defStat ) * evasionModifier( defender );
 
 		if (acuRoll >= defRoll){
 			hitMissIcon = FloatingText.getHitReasonIcon(attacker, acuRoll, defender, defRoll);

@@ -24,6 +24,11 @@ tasks.register('debug', JavaExec) {
     systemProperty 'Specification-Version', appVersionName + "-INDEV"
     systemProperty 'Implementation-Version', appVersionCode
 
+    //forward bot harness config into the game's JVM, e.g. gradlew desktop:debug -Dbot.runs=20
+    System.properties.each { k, v ->
+        if (k.toString().startsWith('bot.')) systemProperty k.toString(), v.toString()
+    }
+
     if (osName.contains('mac')) {
         jvmArgs '-XstartOnFirstThread'
     }

@@ -31,6 +31,7 @@ import com.shatteredpixel.shatteredpixeldungeon.ui.Window;
 import com.shatteredpixel.shatteredpixeldungeon.utils.GLog;
 import com.shatteredpixel.shatteredpixeldungeon.windows.WndBag;
 
+import java.util.HashMap;
 import java.util.HashSet;
 
 //an autonomous player: decides an action whenever the hero becomes ready for input.
@@ -76,8 +77,9 @@ public class Bot {
 	// *** render thread ***
 
 	public static void onRenderTick() {
-		uiBlocking = GameScene.interfaceBlockingHero();
 		if (!enabled) return;
+
+		uiBlocking = GameScene.interfaceBlockingHero();
 
 		runPendingUse();
 		BotWindows.process();
@@ -116,6 +118,8 @@ public class Bot {
 		pendingUse = null;
 		log("disabled: %s", reason);
 		GLog.n("Bot: OFF (%s)", reason);
+		//a giving-up bot ends a harness run as a stall; ignored when no harness runs
+		BotHarness.onBotDisabled(reason);
 	}
 
 	// *** deferred item use: decided on the actor thread, run on the render thread ***
@@ -214,6 +218,10 @@ public class Bot {
 	private static final int SIG_REPEAT_LIMIT    = 3;
 	private static final int DEPTH_BUDGET        = 3000;
 	private static final int IDLE_LIMIT          = 50;
+	//failures are often transient (a mob parked on the target, a charm about to
+	//expire), so a blacklisted cell only stays off-limits for this many turns;
+	//shorter than IDLE_LIMIT so a blocked exit is retried before the bot gives up
+	private static final float BLACKLIST_TTL     = 30f;
 
 	private static float lastNow = Float.NaN;
 	private static int noProgress = 0;
@@ -223,8 +231,26 @@ public class Bot {
 	private static int guardBranch = -1;
 	private static int depthDecisions = 0;
 	private static int idleStreak = 0;
-	private static final HashSet<Integer> blacklist = new HashSet<>();
+	private static final HashMap<Integer, Float> blacklist = new HashMap<>();
 	private static final HashSet<Integer> searchedCells = new HashSet<>();
+
+	//hazardous clouds the hero has seen, remembered after they leave his sight
+	//(see BotPaths.hazards); stamp holds the game time of the last look at each
+	//cell, so stale memories can be re-scouted (see the Scout behavior)
+	private static boolean[] hazardMemory = null;
+	private static float[] hazardStamp = null;
+
+	static boolean[] hazardMemory( int length ) {
+		if (hazardMemory == null || hazardMemory.length != length) {
+			hazardMemory = new boolean[length];
+			hazardStamp = new float[length];
+		}
+		return hazardMemory;
+	}
+
+	static float[] hazardStamp() {
+		return hazardStamp;
+	}
 
 	//returns false when the guard consumed this decision (forced a wait or disabled)
 	static boolean guardTick( Hero hero ) {
@@ -233,6 +259,8 @@ public class Bot {
 			guardBranch = Dungeon.branch;
 			blacklist.clear();
 			searchedCells.clear();
+			hazardMemory = null;
+			hazardStamp = null;
 			depthDecisions = 0;
 			idleStreak = 0;
 			lastSig = null;
@@ -273,15 +301,22 @@ public class Bot {
 
 	//call before issuing; returns false (and blacklists the target) when this exact
 	//decision keeps repeating without game time advancing
-	static boolean guardIssue( String behavior, int target ) {
+	static boolean guardIssue( Hero hero, String behavior, int target ) {
 		String sig = behavior + ":" + target;
 		if (noProgress > 0 && sig.equals(lastSig)) {
 			sigRepeats++;
 			if (sigRepeats >= SIG_REPEAT_LIMIT) {
-				blacklist.add(target);
-				log("%s keeps failing on cell %d, blacklisting it this floor", behavior, target);
 				sigRepeats = 0;
 				lastSig = null;
+				if (hero.rooted) {
+					//a rooted hero fails every move without game time passing; the
+					//root wears off on its own, so wait it out rather than poison
+					//the blacklist with targets that are perfectly fine
+					log("%s can't move while rooted, waiting it out", behavior);
+				} else {
+					blacklist.put(target, Actor.now() + BLACKLIST_TTL);
+					log("%s keeps failing on cell %d, avoiding it for a while", behavior, target);
+				}
 				return false;
 			}
 		} else {
@@ -292,7 +327,13 @@ public class Bot {
 	}
 
 	public static boolean isBlacklisted(int cell) {
-		return blacklist.contains(cell);
+		Float until = blacklist.get(cell);
+		if (until == null) return false;
+		if (Actor.now() >= until) {
+			blacklist.remove(cell);
+			return false;
+		}
+		return true;
 	}
 
 	public static void markSearched(int cell) {

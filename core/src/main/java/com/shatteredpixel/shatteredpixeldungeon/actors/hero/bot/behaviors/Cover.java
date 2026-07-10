@@ -1,6 +1,7 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
@@ -151,14 +152,9 @@ public class Cover extends BotBrain.Behavior {
         return total;
     }
 
-    //like hitChance, but with the doubled accuracy Char.hit grants magic attacks;
-    //most ranged mobs shoot magic, and assuming it for the rest errs toward caution
+    //uses Char.hitChance() to get the exact hit probability
     private static float rangedHitChance( Mob mob, Hero hero ) {
-        float acu = mob.attackSkill(hero) * 2f;
-        float def = hero.defenseSkill(mob);
-        if (acu <= 0) return 0;
-        if (def <= 0) return 1;
-        return acu >= def ? 1f - def / (2f * acu) : acu / (2f * def);
+        return Char.hitChance(mob, hero, 2f);
     }
 
     //average of a handful of damage rolls, on a private seeded generator so the

@@ -7,8 +7,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
-import com.shatteredpixel.shatteredpixeldungeon.items.KindOfWeapon;
-import com.shatteredpixel.shatteredpixeldungeon.items.rings.RingOfForce;
+import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.watabou.utils.PathFinder;
 
@@ -28,32 +27,6 @@ public class Ambush extends BotBrain.Behavior {
     //a nearly-dead or easily-hit mob justifies a door right beside the fight
     //at most; a healthy wraith-like justifies crossing half the floor
     private static final int TREK_CAP = 25;
-
-    //the walk is not free: the chaser swings at the hero's back each step, and
-    //each swing lands with probability q (mob accuracy vs hero evasion). the
-    //hero can endure ~ENDURE_HITS landed hits at full health, less when hurt,
-    //so the trek is also capped at the steps expected to cost that many hits
-    private static final float ENDURE_HITS = 6f;
-
-    static int maxTrek(Hero hero, Mob mob ) {
-        float p = hitChance(hero, mob);
-        if (p <= 0) return TREK_CAP;
-        float hitsLeft = Math.max(1, (float)Math.ceil(mob.HP / avgDamage(hero)));
-        float saved = hitsLeft * (1f / p - 1f);
-        float q = Math.max(0.05f, hitChance(hero, mob));
-        float endurable = ENDURE_HITS * (hero.HP / (float)hero.HT) / q;
-        return (int)Math.min(TREK_CAP, Math.min(saved, endurable));
-    }
-
-    //average damage per landed hit, without the side effects of a real
-    //damageRoll; the mob's armor is ignored (evasive enemies barely have any)
-    private static float avgDamage( Hero hero ) {
-        KindOfWeapon wep = hero.belongings.attackingWeapon();
-        if (wep != null && !RingOfForce.fightingUnarmed(hero)) {
-            return Math.max(1f, (wep.min() + wep.max()) / 2f);
-        }
-        return Math.max(1f, (1 + Math.max(hero.STR() - 8, 1)) / 2f);
-    }
 
     private static final int MAX_WAITS = 12;
     private static final int MAX_HIDE_MOVES = 12;
@@ -84,7 +57,7 @@ public class Ambush extends BotBrain.Behavior {
         //drop the mark once it dies, flees, or falls asleep; wandering is kept -
         //a mark that noticed the hero only after being acquired hunts soon enough
         if (target != null && (!target.isAlive() || !Dungeon.level.mobs.contains(target)
-                || !(target.state == target.HUNTING || target.state == target.WANDERING))) {
+                || target.state != target.HUNTING && target.state != target.WANDERING)) {
             target = null;
             waits = 0;
             hideMoves = 0;
@@ -92,8 +65,27 @@ public class Ambush extends BotBrain.Behavior {
         }
 
         if (target == null) {
-            acquire(hero, s);
-            if (target == null) return false;
+            int bestDist = Integer.MAX_VALUE;
+            for (Mob mob : hero.getVisibleEnemies()) {
+                if (!threat(mob) ||
+                        mob.invisible > 0 || //can't be struck (see Fight), so can't be ambushed
+                        mob.state != mob.HUNTING ||
+                        mob == givenUpOn ||
+                        Bot.isBlacklisted(mob.pos) ||
+                        !hero.canAttack(mob) && !s.reachable(mob.pos) ||
+                        mob.surprisedBy(hero, true) && (hero.canAttack(mob) || mob.state == mob.SLEEPING) ||
+                        !canSetUp(hero, mob, s)) {
+                    continue;
+                }
+                int dist = s.dist[mob.pos];
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    target = mob;
+                }
+            }
+            if (target == null) {
+                return false;
+            }
             Bot.log("ambush: %s is hard to hit (%.0f%%), setting a trap",
                     target.name(), 100 * hitChance(hero, target));
         }
@@ -115,7 +107,7 @@ public class Ambush extends BotBrain.Behavior {
             //trades misses, even right next to a door - what matters is being on
             //the far side of one, where its closing breaks the mob's sight. walk
             //there; it will follow and come through blind
-            int spot = spotFor(hero, target, s);
+            int spot = ambushSpot(hero, target, s);
             if (spot == -1) {
                 giveUp("no door close enough");
                 return false;
@@ -126,10 +118,19 @@ public class Ambush extends BotBrain.Behavior {
         }
 
         //never sit in ambush while something better fought head-on is in reach;
-        //fellow slippery chasers don't count, or wraith packs would break the plan
+        //fellow slippery chasers don't count, or wraith packs would break the plan.
+        //but a chaser that is aware and already in position to strike is past
+        //ambushing - resting just eats its hits, so step aside and let the
+        //fighting behaviors deal with it (pack-mates coming through the door
+        //blind stay harmless: they can't see the hero, so they can't attack)
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob != target && threat(mob) && hero.canAttack(mob)
+            if (mob == target || !threat(mob)) continue;
+            if (hero.canAttack(mob)
                     && (mob.surprisedBy(hero, true) || !canSetUp(hero, mob, s))) {
+                return false;
+            }
+            if (!mob.surprisedBy(hero, true) && mob.canAttackTarget(hero)
+                    && sees(mob, hero.pos)) {
                 return false;
             }
         }
@@ -162,11 +163,22 @@ public class Ambush extends BotBrain.Behavior {
             return true;
         }
 
-        int spot = spotFor(hero, target, s);
+        int spot = ambushSpot(hero, target, s);
         if (spot == -1) {
             //beside a closed door with no better spot: the mark "seeing" this cell
             //may just be stale sight from before the door shut (a mob's fov only
-            //refreshes on its own turn); hold position rather than give up
+            //refreshes on its own turn); hold position rather than give up.
+            //but a mark that is aware and lined up to strike right now is no
+            //stale reading - sitting still would just eat hits. judged by the
+            //mark's own sight, not the hero's: it can be hitting from a cell
+            //the hero can't see (fov is not symmetric around door corners)
+            boolean underFire = !target.surprisedBy(hero, true)
+                    && target.canAttackTarget(hero)
+                    && sees(target, hero.pos);
+            if (underFire) {
+                giveUp("it has me lined up");
+                return false;
+            }
             if (besideClosedDoor(hero.pos)) {
                 if (++waits > MAX_WAITS) {
                     giveUp("it isn't taking the bait");
@@ -204,11 +216,15 @@ public class Ambush extends BotBrain.Behavior {
 
     //out of the mark's sight, beside a closed door it will have to come through
     private boolean hidden( Hero hero ) {
-        if (target.fieldOfView != null && target.fieldOfView.length == Dungeon.level.length()
-                && target.fieldOfView[hero.pos]) {
-            return false;
-        }
-        return besideClosedDoor(hero.pos);
+        return !sees(target, hero.pos) && besideClosedDoor(hero.pos);
+    }
+
+    //whether this mob's field of view covers the cell; a mob's fov only
+    //refreshes on its own turn, so this can be up to one turn stale
+    private static boolean sees( Mob mob, int cell ) {
+        return mob.fieldOfView != null
+                && mob.fieldOfView.length == Dungeon.level.length()
+                && mob.fieldOfView[cell];
     }
 
     private boolean besideClosedDoor( int pos ) {
@@ -249,48 +265,93 @@ public class Ambush extends BotBrain.Behavior {
         return nearest;
     }
 
-    private void acquire( Hero hero, BotPaths.Snapshot s ) {
-        int bestDist = Integer.MAX_VALUE;
-        for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob)) continue;
-            //only ambush what chases, or will: a wanderer close enough to notice
-            //the hero (they are in each other's sight) starts hunting right away
-            boolean willChase = mob.state == mob.HUNTING
-                    || (mob.state == mob.WANDERING
-                    && Dungeon.level.distance(hero.pos, mob.pos) <= mob.viewDistance);
-            if (!willChase || mob == givenUpOn) continue;
-            if (Bot.isBlacklisted(mob.pos)) continue;
-            if (!hero.canAttack(mob) && !s.reachable(mob.pos)) continue;
-            //surprised and in reach (or asleep): a plain attack collects the free
-            //hit right now. a distant awake mob is another story - it notices the
-            //hero mid-charge and the surprise is gone on arrival, so still ambush
-            if (mob.surprisedBy(hero, true)
-                    && (hero.canAttack(mob) || mob.state == mob.SLEEPING)) continue;
-            if (!canSetUp(hero, mob, s)) continue;
-            int dist = hero.canAttack(mob) ? 0 : s.dist[mob.pos];
-            if (dist < bestDist) {
-                bestDist = dist;
-                target = mob;
-            }
-        }
-    }
-
     //a hiding spot exists within the walk this mob's evasion justifies
     static boolean worthAmbushing( Hero hero, Mob mob, BotPaths.Snapshot s ) {
-        return spotFor(hero, mob, s) != -1;
+        return ambushSpot(hero, mob, s) != -1;
     }
 
     //like worthAmbushing, but a propped-open door beside the hero also counts:
     //re-arming it takes two turns, the same as a hiding spot two steps away
     private boolean canSetUp( Hero hero, Mob mob, BotPaths.Snapshot s ) {
+        if (tooFast(hero, mob)) return false;
         if (worthAmbushing(hero, mob, s)) return true;
-        return propOpenDoorBeside(hero) != -1 && maxTrek(hero, mob) >= 2;
+        return propOpenDoorBeside(hero) != -1;
     }
 
-    static int spotFor( Hero hero, Mob mob, BotPaths.Snapshot s ) {
-        int trek = maxTrek(hero, mob);
-        if (trek <= 0) return -1;
-        return BotPaths.ambushSpot(hero, mob, s, trek);
+    //a mark that acts more often than the hero breaks the plan twice over: it
+    //closes the gap during the trek, and it can step through the door and still
+    //attack before the hero's turn - the surprise strike is no longer guaranteed.
+    //the trek runs at hero.speed(), but the wait beside the door is always one
+    //turn per rest, so the slower of the two paces is what the mark must not beat
+    private static boolean tooFast( Hero hero, Mob mob ) {
+        return mob.speed() > Math.min(hero.speed(), 1f);
+    }
+
+    private static int ambushSpot(Hero hero, Mob mob, BotPaths.Snapshot s ) {
+        if (tooFast(hero, mob)) return -1;
+
+        Level level = Dungeon.level;
+        int best = -1;
+        int bestDist = Integer.MAX_VALUE;
+        for (int c = 0; c < s.dist.length; c++) {
+            if (!s.pass[c] || s.hazard[c] || s.dist[c] >= bestDist || Bot.isBlacklisted(c)) continue;
+
+            int terrain = level.map[c];
+            if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
+
+            if (!worksAsAmbush(hero, mob, c, s)) continue;
+
+            best = c;
+            bestDist = s.dist[c];
+        }
+        return bestDist <= TREK_CAP ? best : -1;
+    }
+
+    private static boolean worksAsAmbush( Hero hero, Mob mob, int c, BotPaths.Snapshot s ) {
+        Level level = Dungeon.level;
+        for (int offset : PathFinder.NEIGHBOURS8) {
+            int d = c + offset;
+            if (d < 0 || d >= level.length()) continue;
+
+            int terrain = level.map[d];
+            if (terrain == Terrain.DOOR) {
+                //door already shut: hidden means simply out of the mob's sight
+                if (mob.fieldOfView == null || mob.fieldOfView.length != level.length()
+                        || !mob.fieldOfView[c]) {
+                    return true;
+                }
+            } else if (terrain == Terrain.OPEN_DOOR
+                    && level.heaps.get(d) == null
+                    && (Actor.findChar(d) == null || Actor.findChar(d) == hero)) {
+                //open but nothing propping it: it shuts once the hero crosses it.
+                //hidden means the far side of the door from the mob - and "side"
+                //is set by the wall the door sits in, so compare along the
+                //passage axis only. walls east/west of the door mean the passage
+                //runs north-south (sides split by y); otherwise it runs east-west
+                int w = level.width();
+                boolean passageVertical = level.solid[d - 1] && level.solid[d + 1];
+                int mobSide, cSide;
+                if (passageVertical) {
+                    mobSide = Integer.signum(mob.pos / w - d / w);
+                    cSide   = Integer.signum(c / w - d / w);
+                } else {
+                    mobSide = Integer.signum(mob.pos % w - d % w);
+                    cSide   = Integer.signum(c % w - d % w);
+                }
+                //the race for the door: the hero must cross it and step off (only
+                //then does it shut) before the mark can be there. the mark's
+                //straight-line steps are the best it could possibly manage, so
+                //beating that bound means winning for sure; a tie loses - the
+                //mark reaches the doorway with the hero still in sight
+                boolean doorShutsFirst = level.distance(mob.pos, d) / mob.speed()
+                        > s.dist[c] / hero.speed();
+                if (mobSide != 0 && cSide != 0 && mobSide != cSide
+                        && doorShutsFirst && s.dist[d] < s.dist[c]) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void giveUp( String why ) {

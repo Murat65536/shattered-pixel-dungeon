@@ -35,6 +35,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.Inferno;
 import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ParalyticGas;
 import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.StenchGas;
 import com.shatteredpixel.shatteredpixeldungeon.actors.blobs.ToxicGas;
+import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
@@ -54,7 +55,7 @@ import java.util.List;
 public class BotPaths {
 
 	public static class Snapshot {
-		final boolean[] pass;
+		public final boolean[] pass;
 		public final int[] dist;
 		//cells covered by a gas or cloud that hurts to stand in (see HAZARD_BLOBS)
 		public final boolean[] hazard;
@@ -114,8 +115,37 @@ public class BotPaths {
 
 		//the hero may be standing somewhere the mask excludes (e.g. a just-revealed trap)
 		pass[hero.pos] = true;
+
+		//the hero cannot walk through chars he can see (Dungeon.findPassable blocks
+		//their cells), so a mob plugging a corridor really cuts off everything
+		//behind it. a snapshot that ignored that kept issuing walks the engine
+		//refuses - they spend no game time and just trip the no-progress guard
+		List<Integer> charCells = new ArrayList<>();
+		for (Char ch : Actor.chars()) {
+			if (ch != hero && level.heroFOV[ch.pos] && pass[ch.pos]) {
+				pass[ch.pos] = false;
+				charCells.add(ch.pos);
+			}
+		}
+
 		PathFinder.buildDistanceMap(hero.pos, pass);
 		int[] dist = PathFinder.distance.clone();
+
+		//chars still make valid walk targets (closing to melee walks at a mob;
+		//the engine allows that by seeding its path scan on the destination), so
+		//their cells keep the distance of stepping in from the best approach.
+		//a mob standing directly behind another stays unreachable, as it should
+		for (int c : charCells) {
+			int best = Integer.MAX_VALUE;
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int n = c + offset;
+				if (n >= 0 && n < length && dist[n] < best) {
+					best = dist[n];
+				}
+			}
+			if (best < Integer.MAX_VALUE) dist[c] = best + 1;
+		}
+
 		return new Snapshot(pass, dist, hazard, lockedDoors);
 	}
 
@@ -146,9 +176,14 @@ public class BotPaths {
 			StenchGas.class, Electricity.class, Fire.class, Inferno.class,
 			Blizzard.class, Freezing.class, GooWarn.class );
 
-	//where hazardous blobs sit, limited to what the hero can actually see -
-	//gas in an unseen corridor is not knowledge the bot should act on. the
-	//hero's own cell always counts: whatever is there, he can feel
+	//where hazardous blobs sit, limited to what the hero can actually see or
+	//remembers seeing - gas in a never-seen corridor is not knowledge the bot
+	//should act on, but gas that merely left his sight is not gone: a cell last
+	//seen covered stays hazardous until a later look shows it clear. without
+	//the memory, stepping out of a gas-filled vault (ToxicGasRoom keeps itself
+	//gassed forever) erased all knowledge of it, and the bot walked right back
+	//in after its loot. the hero's own cell always counts as seen: whatever is
+	//there, he can feel
 	private static boolean[] hazards( Hero hero ) {
 		Level level = Dungeon.level;
 		boolean[] hazard = new boolean[level.length()];
@@ -161,7 +196,45 @@ public class BotPaths {
 				}
 			}
 		}
+		boolean[] memory = Bot.hazardMemory(level.length());
+		float[] stamp = Bot.hazardStamp();
+		float now = Actor.now();
+		for (int c = 0; c < hazard.length; c++) {
+			if (level.heroFOV[c] || c == hero.pos) {
+				memory[c] = hazard[c];
+				stamp[c] = now;
+			} else if (memory[c]) {
+				hazard[c] = true;
+			}
+		}
 		return hazard;
+	}
+
+	//nearest cell to go re-check remembered gas from: walkable, safe, and beside
+	//a cell whose memory has gone stale (last looked at more than staleAge turns
+	//ago - most clouds disperse well within that). standing next to it brings it
+	//back into view, clearing or re-confirming the memory, so stale gas over the
+	//stairs or a heap cannot block the bot forever. -1 when nothing is stale
+	public static int scoutSpot( Hero hero, Snapshot s, float staleAge ) {
+		Level level = Dungeon.level;
+		boolean[] memory = Bot.hazardMemory(level.length());
+		float[] stamp = Bot.hazardStamp();
+		float now = Actor.now();
+		int best = -1;
+		int bestDist = Integer.MAX_VALUE;
+		for (int c = 0; c < s.dist.length; c++) {
+			if (!memory[c] || level.heroFOV[c] || now - stamp[c] < staleAge) continue;
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int n = c + offset;
+				if (n < 0 || n >= s.dist.length) continue;
+				if (n == hero.pos || !s.pass[n] || s.hazard[n] || Bot.isBlacklisted(n)) continue;
+				if (s.dist[n] < bestDist) {
+					bestDist = s.dist[n];
+					best = n;
+				}
+			}
+		}
+		return best;
 	}
 
 	//nearest reachable cell clear of hazardous blobs, ties broken toward cells
@@ -258,58 +331,6 @@ public class BotPaths {
 			}
 		}
 		return best;
-	}
-
-	//nearest cell to lie in wait on: walkable, beside a door, and hidden from the
-	//mob once that door is shut. the door may still be standing open: doors close
-	//behind whoever walks over them, so a spot on the far side of an open door
-	//counts as long as the hero's way there actually crosses it.
-	//-1 when none within maxTrek steps (the caller decides what walk is worth it)
-	public static int ambushSpot(Hero hero, Mob mob, Snapshot s, int maxTrek) {
-		Level level = Dungeon.level;
-		int best = -1;
-		int bestDist = Integer.MAX_VALUE;
-		for (int c = 0; c < s.dist.length; c++) {
-			if (!s.pass[c] || s.hazard[c] || s.dist[c] >= bestDist || Bot.isBlacklisted(c)) continue;
-
-			int terrain = level.map[c];
-			if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
-
-			if (!worksAsAmbush(hero, mob, c)) continue;
-
-			best = c;
-			bestDist = s.dist[c];
-		}
-		return bestDist <= maxTrek ? best : -1;
-	}
-
-	private static boolean worksAsAmbush( Hero hero, Mob mob, int c ) {
-		Level level = Dungeon.level;
-		for (int offset : PathFinder.NEIGHBOURS8) {
-			int d = c + offset;
-			if (d < 0 || d >= level.length()) continue;
-
-			int terrain = level.map[d];
-			if (terrain == Terrain.DOOR) {
-				//door already shut: hidden means simply out of the mob's sight
-				if (mob.fieldOfView == null || mob.fieldOfView.length != level.length()
-						|| !mob.fieldOfView[c]) {
-					return true;
-				}
-			} else if (terrain == Terrain.OPEN_DOOR
-					&& level.heaps.get(d) == null
-					&& (Actor.findChar(d) == null || Actor.findChar(d) == hero)) {
-				//open but nothing propping it: it shuts once the hero crosses it.
-				//the spot works if that hides it from the mob, and getting there
-				//from here really does cross it - trivially so when the hero is
-				//standing in the doorway itself (stepping off shuts it)
-				if (!lineFree(mob.pos, c, d)
-						&& (hero.pos == d || !lineFree(hero.pos, c, d))) {
-					return true;
-				}
-			}
-		}
-		return false;
 	}
 
 	//whether anything on this list of shooters has a clear line to the cell

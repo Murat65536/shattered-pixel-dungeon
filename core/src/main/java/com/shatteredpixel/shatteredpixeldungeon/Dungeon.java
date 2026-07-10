@@ -34,6 +34,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.RevealedArea;
 import com.shatteredpixel.shatteredpixeldungeon.actors.buffs.Terror;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Talent;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotHarness;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.abilities.cleric.PowerOfMany;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.abilities.huntress.SpiritHawk;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.spells.DivineSense;
@@ -874,9 +875,10 @@ public class Dungeon {
 			updateLevelExplored();
 			Statistics.gameWon = false;
 			Rankings.INSTANCE.submit( false, cause );
+			BotHarness.onGameEnd( false, cause );
 		}
 	}
-	
+
 	public static void win( Object cause ) {
 
 		updateLevelExplored();
@@ -885,6 +887,7 @@ public class Dungeon {
 		hero.belongings.identify();
 
 		Rankings.INSTANCE.submit( true, cause );
+		BotHarness.onGameEnd( true, cause );
 	}
 
 	public static void updateLevelExplored(){

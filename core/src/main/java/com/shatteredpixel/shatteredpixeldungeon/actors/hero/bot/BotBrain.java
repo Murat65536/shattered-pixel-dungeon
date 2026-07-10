@@ -65,7 +65,7 @@ public class BotBrain {
 
 		//queues an action for a cell through the same dispatch player taps use
 		protected static boolean issueHandle( Hero hero, String behavior, int cell ) {
-			if (!Bot.guardIssue(behavior, cell)) return false;
+			if (!Bot.guardIssue(hero, behavior, cell)) return false;
 			Bot.log("%s -> %d", behavior, cell);
 			if (hero.handle(cell)) {
 				hero.next();
@@ -74,13 +74,9 @@ public class BotBrain {
 			return false;
 		}
 
-		//approximates Char.hit(): both sides roll uniformly up to their skill
+		//uses Char.hitChance() to get the exact hit probability
 		protected static float hitChance( Char char1, Char char2 ) {
-			float acu = char1.attackSkill(char2);
-			float def = char2.defenseSkill(char1);
-			if (acu <= 0) return 0;
-			if (def <= 0) return 1;
-			return acu >= def ? 1f - def / (2f * acu) : acu / (2f * def);
+			return Char.hitChance(char1, char2, 1f);
 		}
 
 		//piranhas are bound to the water and cannot follow the hero onto land: they
@@ -101,6 +97,7 @@ public class BotBrain {
 
 	private static final Behavior[] CHAIN = new Behavior[]{
 			new Heal(),
+			new Escape(),
 			new Retreat(),
 			new Cover(),
 			new Shoot(),
@@ -116,6 +113,7 @@ public class BotBrain {
 			new Unlock(),
 			new Explore(),
 			new Rest(),
+			new Scout(),
 			new Descend(),
 			new Search()
 	};

@@ -42,8 +42,11 @@ public class Funnel extends BotBrain.Behavior {
         //only kicks in against a pack that is actively coming for the hero
         List<Mob> hunters = new ArrayList<>();
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob) || mob.state != mob.HUNTING) continue;
-            if (!hero.canAttack(mob) && !s.reachable(mob.pos)) continue;
+            if (!threat(mob) ||
+                    mob.state != mob.HUNTING ||
+                    !hero.canAttack(mob)) {
+                continue;
+            }
             hunters.add(mob);
         }
         if (hunters.size() < 2) return false;
