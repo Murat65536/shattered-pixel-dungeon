@@ -1,12 +1,14 @@
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotItems;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
+import com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand;
 import com.shatteredpixel.shatteredpixeldungeon.ui.QuickSlotButton;
 
 //an enemy closing in from range eats a shot every turn of its walk: damage the
@@ -36,13 +38,14 @@ public class Shoot extends BotBrain.Behavior {
             }
         }
 
-        BotItems.RangedAttack ranged = BotItems.rangedAttack(hero);
-        if (ranged == null) return false;
-
         Mob best = null;
         int bestDist = Integer.MAX_VALUE;
         for (Mob mob : hero.getVisibleEnemies()) {
+            if (!threat(mob) || mob.state != mob.HUNTING) continue;
             if (Bot.isBlacklisted(mob.pos)) continue;
+            //committed to the hero: shooting already, or able to walk over.
+            //one that can do neither can be safely ignored, not sniped
+            if (!mob.canAttackTarget(hero) && !s.reachable(mob.pos)) continue;
             int dist = Dungeon.level.distance(hero.pos, mob.pos);
             if (dist < bestDist) {
                 bestDist = dist;
@@ -50,6 +53,25 @@ public class Shoot extends BotBrain.Behavior {
             }
         }
         if (best == null) return false;
+
+        //an unknown wand takes the occasional shot: if it turns out to be a
+        //damage wand the zap chips like any other, and either way it works
+        //toward the identify. only at solid HP - the first zap of a cursed wand
+        //backfires - and spaced out so a dud wand doesn't eat every shooting turn
+        if (hero.HP >= hero.HT * 0.5f && Actor.now() >= BotItems.nextIdZapAt) {
+            Wand unknown = BotItems.idZapWand(hero);
+            if (unknown != null) {
+                int aim = QuickSlotButton.autoAim(best, unknown);
+                if (aim != -1) {
+                    BotItems.nextIdZapAt = Actor.now() + 10;
+                    return Bot.requestUseAt(unknown, Wand.AC_ZAP, aim,
+                            String.format("zap-id %s at %s", unknown.name(), best.name()));
+                }
+            }
+        }
+
+        BotItems.RangedAttack ranged = BotItems.rangedAttack(hero);
+        if (ranged == null) return false;
 
         //the exact cell to aim at so the projectile connects (may be angled past
         //the target); -1 means no line of fire from where the hero stands

@@ -281,6 +281,7 @@ public class Bot {
 			sigRepeats = 0;
 			BotItems.nextIdDrinkAt = 0;
 			BotItems.nextIdReadAt = 0;
+			BotItems.nextIdZapAt = 0;
 		}
 
 		depthDecisions++;

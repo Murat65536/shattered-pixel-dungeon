@@ -85,6 +85,7 @@ public class BotItems {
 	//use-to-identify pacing: no sooner than these game times (reset each floor)
 	public static float nextIdDrinkAt = 0;
 	public static float nextIdReadAt = 0;
+	public static float nextIdZapAt = 0;
 
 	public static Potion unknownPotion(Hero hero) {
 		for (Potion potion : hero.belongings.getAllItems(Potion.class)) {
@@ -169,6 +170,23 @@ public class BotItems {
 	private static final List<Class<? extends Wand>> DAMAGE_WANDS = Arrays.asList(
 			WandOfMagicMissile.class, WandOfDisintegration.class, WandOfFrost.class,
 			WandOfPrismaticLight.class, WandOfLightning.class );
+
+	//an unknown wand worth test-zapping at an enemy. a wand's type is printed on
+	//its label before identification; what identifying reveals is its level and
+	//whether it is cursed. so every zap builds toward the identify, and the first
+	//may reveal a curse the hard way, after which the wand is left alone.
+	//peeks at curCharges (displayed as "?" until identified) because zapping an
+	//empty wand fizzles without spending time - a livelock, not just a wasted turn
+	public static Wand idZapWand(Hero hero) {
+		for (Wand wand : hero.belongings.getAllItems(Wand.class)) {
+			if (wand.isIdentified() || (wand.cursedKnown && wand.cursed)) continue;
+			if (wand.curCharges <= 0) continue;
+			//lightning arcs through water, hero included
+			if (wand instanceof WandOfLightning && Dungeon.level.water[hero.pos]) continue;
+			return wand;
+		}
+		return null;
+	}
 
 	//the best ranged attack in the inventory, or null. renewable sources first:
 	//the spirit bow conjures its own arrows and wands recharge on their own,
