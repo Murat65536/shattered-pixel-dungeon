@@ -425,10 +425,15 @@ public class BotPaths {
 		return best;
 	}
 
+	//whether a straight line between the cells is clear of los-blocking terrain
+	public static boolean lineFree( int from, int to ) {
+		return lineFree(from, to, -1);
+	}
+
 	//straight-line sight approximation: walks a bresenham line and reports whether
 	//it is clear of los-blocking terrain, treating closedDoor as shut. cruder than
-	//the game's shadowcasting, but good enough for judging door-side ambush cells
-	//and ranged-attack cover; a rare wrong call just costs one extra reposition
+	//the game's shadowcasting, but good enough for judging ambush cells and
+	//ranged-attack cover; a rare wrong call just costs one extra reposition
 	private static boolean lineFree( int from, int to, int closedDoor ) {
 		Level level = Dungeon.level;
 		int w = level.width();

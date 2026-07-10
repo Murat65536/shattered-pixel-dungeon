@@ -2,6 +2,7 @@ package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
+import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
@@ -16,9 +17,8 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.watabou.utils.PathFinder;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Ambush extends BotBrain.Behavior {
 
@@ -26,8 +26,6 @@ public class Ambush extends BotBrain.Behavior {
     private static final int TREK_CAP = 25;
     //extra trek allowance: the strike leaves a doorway chokepoint fight (or a rearmable trap) behind
     private static final float DOOR_BONUS = 2f;
-    //fraction of current HP the walk may be expected to cost, like Cover's approach bill
-    private static final float MAX_HP_SPEND = 0.25f;
     //patience caps before giving up on a mark
     private static final int MAX_WAITS = 12;
     private static final int MAX_HIDE_MOVES = 12;
@@ -36,6 +34,9 @@ public class Ambush extends BotBrain.Behavior {
     private Mob givenUpOn = null;
     private int waits = 0;
     private int hideMoves = 0;
+    //the cell the mark last saw the hero on: what it hunts toward once he
+    //ducks out of its sight
+    private int lastKnown = -1;
     //a mark killed on the doorway props the door open; walking onto it and back off re-arms the trap
     private int rearmDoor = -1;
     private int rearmFrom = -1;
@@ -86,22 +87,28 @@ public class Ambush extends BotBrain.Behavior {
                     target.name(), 100 * hitChance(hero, target));
         }
 
+        //refreshed while the mark can still see the hero: the best guess at
+        //where its own hunt will head once he ducks away
+        if (lastKnown == -1 || sees(target, hero.pos)) {
+            lastKnown = hero.pos;
+        }
+
         //in reach and truly visible - adjacent yet unseen behind the door means attacking would just open it
-        boolean seen = hero.fieldOfView != null && hero.fieldOfView.length == Dungeon.level.length()
-                && hero.fieldOfView[target.pos];
-        if (seen && (hero.canAttack(target) || Dungeon.level.adjacent(hero.pos, target.pos))) {
+        if (sees(hero, target.pos) && (hero.canAttack(target) || Dungeon.level.adjacent(hero.pos, target.pos))) {
             //unaware: spring the trap, the hit is guaranteed
             if (target.surprisedBy(hero, true)) {
+                //not reset(): rearm state survives the strike so a doorway kill can still shut the door
                 Mob struck = target;
                 target = null;
                 waits = 0;
                 hideMoves = 0;
+                lastKnown = -1;
                 return issueHandle(hero, name(), struck.pos);
             }
-            //aware: standing ground just trades misses - walk behind a door and it will follow through blind
+            //aware: standing ground just trades misses - duck out of its sight and it will blunder into reach blind
             int spot = ambushSpot(hero, target, s);
             if (spot == -1) {
-                giveUp("no door close enough");
+                giveUp("nowhere to hide");
                 return false;
             }
             if (spot != hero.pos) {
@@ -138,7 +145,7 @@ public class Ambush extends BotBrain.Behavior {
             return issueHandle(hero, name() + "-rearm", propped);
         }
 
-        if (hidden(hero)) {
+        if (hidden(hero, s)) {
             return holdPosition(hero);
         }
 
@@ -163,7 +170,7 @@ public class Ambush extends BotBrain.Behavior {
             if (besideClosedDoor(hero.pos)) {
                 return holdPosition(hero);
             }
-            giveUp("no door close enough");
+            giveUp("nowhere to hide");
             return false;
         }
         if (spot == hero.pos) {
@@ -203,12 +210,16 @@ public class Ambush extends BotBrain.Behavior {
         target = null;
         waits = 0;
         hideMoves = 0;
+        lastKnown = -1;
         rearmDoor = rearmFrom = -1;
     }
 
-    //out of the mark's sight, beside a closed door it will have to come through
-    private boolean hidden( Hero hero ) {
-        return !sees(target, hero.pos) && besideClosedDoor(hero.pos);
+    //out of the mark's sight and set for a strike: beside a closed door it must
+    //come through, or hidden in the open with its walk due to pass within reach
+    private boolean hidden( Hero hero, BotPaths.Snapshot s ) {
+        if (sees(target, hero.pos)) return false;
+        if (besideClosedDoor(hero.pos)) return true;
+        return worksAsLosAmbush(hero, target, hero.pos, s, freshFov(target), new HashMap<>());
     }
 
     //beside a shut door with the mark on its far side, ignoring its possibly-stale fov (unlike hidden())
@@ -225,11 +236,11 @@ public class Ambush extends BotBrain.Behavior {
         return false;
     }
 
-    //whether this mob's fov covers the cell; it only refreshes on the mob's turn, so up to a turn stale
-    private static boolean sees( Mob mob, int cell ) {
-        return mob.fieldOfView != null
-                && mob.fieldOfView.length == Dungeon.level.length()
-                && mob.fieldOfView[cell];
+    //whether this char's fov covers the cell; a mob's only refreshes on its turn, so up to a turn stale
+    private static boolean sees( Char ch, int cell ) {
+        return ch.fieldOfView != null
+                && ch.fieldOfView.length == Dungeon.level.length()
+                && ch.fieldOfView[cell];
     }
 
     private boolean besideClosedDoor( int pos ) {
@@ -268,16 +279,14 @@ public class Ambush extends BotBrain.Behavior {
         return nearest;
     }
 
-    //a hiding spot exists within the walk this mob's evasion justifies
-    static boolean worthAmbushing( Hero hero, Mob mob, BotPaths.Snapshot s ) {
-        return ambushSpot(hero, mob, s) != -1;
-    }
-
-    //worthAmbushing, plus a propped-open door beside the hero counts like a spot two steps away
+    //a hiding spot exists within the justified walk, or a propped-open door
+    //beside the hero counts as good as one
     private boolean canSetUp( Hero hero, Mob mob, BotPaths.Snapshot s ) {
+        //flails and the like never land surprise hits: no trap pays off
+        if (!hero.canSurpriseAttack()) return false;
         if (tooFast(hero, mob)) return false;
-        if (worthAmbushing(hero, mob, s)) return true;
-        return propOpenDoorBeside(hero) != -1 && maxTrek(hero, mob) >= 2;
+        if (ambushSpot(hero, mob, s) != -1) return true;
+        return propOpenDoorBeside(hero) != -1 && maxTrek(hero, mob) > 0;
     }
 
     //a mark acting more often than the hero closes the gap mid-trek and can strike through the door unsurprised
@@ -285,14 +294,15 @@ public class Ambush extends BotBrain.Behavior {
         return mob.speed() > Math.min(hero.speed(), 1f);
     }
 
-    //longest walk a trap justifies: one guaranteed hit saves 1/p - 1 turns of misses, a kill up to 1/p more
-    static int maxTrek( Hero hero, Mob mob ) {
+    //longest walk a trap justifies: one guaranteed hit saves 1/p - 1 turns of misses, a kill up to 1/p more.
+    //door-side spots get DOOR_BONUS on top of this, judged where spots are picked
+    private static int maxTrek( Hero hero, Mob mob ) {
         float p = hitChance(hero, mob);
         if (p <= 0) return TREK_CAP;
         float saved = 1f / p - 1f;
         if (saved < 1f) return 0; //hit more often than not: no trap
         saved += killChance(hero, mob) / p;
-        return (int)Math.min(TREK_CAP, saved + DOOR_BONUS);
+        return (int)Math.min(TREK_CAP, saved);
     }
 
     //chance the strike kills outright; sneak weapons roll from 75% up their range, armor ignored, roll ~uniform
@@ -315,38 +325,114 @@ public class Ambush extends BotBrain.Behavior {
         return (max - mob.HP + 1) / (max - floor + 1);
     }
 
-    private static int ambushSpot( Hero hero, Mob mob, BotPaths.Snapshot s ) {
+    //nearest spot worth hiding on, door-side or open-ground. door spots count as
+    //DOOR_BONUS steps closer than they are: the strike leaves a doorway
+    //chokepoint fight (or a rearmable trap) behind
+    private int ambushSpot( Hero hero, Mob mob, BotPaths.Snapshot s ) {
         if (tooFast(hero, mob)) return -1;
 
         int trek = maxTrek(hero, mob);
         if (trek <= 0) return -1;
 
+        //a mark that can strike from range never walks into reach blind - the
+        //moment it regains a line it just shoots, so only a door traps it.
+        //judged in the moment: no line right now reads as melee, and a wrong
+        //read simply ends in giveUp once it opens fire
+        boolean rangedMark = !Dungeon.level.adjacent(hero.pos, mob.pos) && mob.canAttackTarget(hero);
+
+        boolean[] mobFov = freshFov(mob);
+        Map<Integer, PathFinder.Path> paths = new HashMap<>();
+
         Level level = Dungeon.level;
-        List<Integer> candidates = new ArrayList<>();
+        int best = -1;
+        float bestCost = Float.MAX_VALUE;
         for (int c = 0; c < s.dist.length; c++) {
-            if (!s.pass[c] || s.hazard[c] || s.dist[c] > trek || Bot.isBlacklisted(c)) continue;
+            if (!s.pass[c] || s.hazard[c] || Bot.isBlacklisted(c)) continue;
+            if (s.dist[c] - DOOR_BONUS >= bestCost) continue;
+            if (s.dist[c] > Math.min(TREK_CAP, trek + DOOR_BONUS)) continue;
 
             int terrain = level.map[c];
             if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
 
-            //cheap prefilter without the route in hand; verified again below
-            if (!worksAsAmbush(hero, mob, c, s, null)) continue;
-
-            candidates.add(c);
+            float cost;
+            if (worksAsDoorAmbush(hero, mob, c, s)) {
+                cost = s.dist[c] - DOOR_BONUS;
+            } else if (!rangedMark && s.dist[c] <= trek
+                    && worksAsLosAmbush(hero, mob, c, s, mobFov, paths)) {
+                cost = s.dist[c];
+            } else {
+                continue;
+            }
+            if (cost < bestCost) {
+                best = c;
+                bestCost = cost;
+            }
         }
-        //nearest spot whose actual walk crosses the arming door and survives the chasers' reach
-        candidates.sort(Comparator.comparingInt(a -> s.dist[a]));
-        for (int c : candidates) {
-            int[] path = route(c, s);
-            if (path == null) continue;
-            if (!worksAsAmbush(hero, mob, c, s, path)) continue;
-            return c;
+        return best;
+    }
+
+    //whether c hides from this mob in the open: out of its next-act fov, with
+    //the walk it is expected to make ending within striking reach of c and
+    //staying blind to c the whole way - a mark that regains its line mid-walk
+    //stops chasing ghosts right where it stands instead of strolling into reach
+    private boolean worksAsLosAmbush( Hero hero, Mob mob, int c, BotPaths.Snapshot s,
+                                      boolean[] mobFov, Map<Integer, PathFinder.Path> paths ) {
+        if (mobFov[c]) return false;
+
+        Level level = Dungeon.level;
+        //the mark walks to its last knowledge of the hero: the cell it watches
+        //him duck out of sight from, or the remembered one if he is already gone
+        int dest = mobFov[hero.pos] ? predecessor(c, s) : lastKnown;
+        if (dest == -1 || dest == c || !level.adjacent(dest, c)) return false;
+
+        //already within reach and about to go blind: the strike lands next turn
+        if (mob.pos == dest || level.adjacent(mob.pos, c)) return true;
+
+        if (!paths.containsKey(dest)) {
+            paths.put(dest, PathFinder.find(mob.pos, dest, level.passable));
+        }
+        PathFinder.Path path = paths.get(dest);
+        //no way over, or not before patience runs out
+        if (path == null || path.size() > MAX_WAITS) return false;
+
+        for (int cell : path) {
+            if (level.distance(cell, c) <= 1) continue; //in reach: the strike lands first
+            if (level.distance(cell, c) <= mob.viewDistance
+                    && BotPaths.lineFree(cell, c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    //the cell before c on the hero's shortest walk there - the last place the
+    //mark watches the hero on before he ducks out of sight
+    private static int predecessor( int c, BotPaths.Snapshot s ) {
+        if (!s.reachable(c) || s.dist[c] == 0) return -1;
+        for (int offset : PathFinder.NEIGHBOURS8) {
+            int n = c + offset;
+            if (n >= 0 && n < s.dist.length && s.pass[n] && s.dist[n] == s.dist[c] - 1) {
+                return n;
+            }
         }
         return -1;
     }
 
-    //whether c hides from this mob behind an adjacent door; with a route given, the arming door must lie on it
-    private static boolean worksAsAmbush( Hero hero, Mob mob, int c, BotPaths.Snapshot s, int[] path ) {
+    private static boolean[] scratchFov;
+
+    //the mob's fov as it will be on its next act, recomputed from where it
+    //stands now; its own fieldOfView (see sees()) is up to a turn stale - fine
+    //for reading what it saw, useless for predicting what it is about to see
+    private static boolean[] freshFov( Mob mob ) {
+        if (scratchFov == null || scratchFov.length != Dungeon.level.length()) {
+            scratchFov = new boolean[Dungeon.level.length()];
+        }
+        Dungeon.level.updateFieldOfView(mob, scratchFov);
+        return scratchFov;
+    }
+
+    //whether c hides from this mob behind an adjacent door
+    private static boolean worksAsDoorAmbush( Hero hero, Mob mob, int c, BotPaths.Snapshot s ) {
         Level level = Dungeon.level;
         for (int offset : PathFinder.NEIGHBOURS8) {
             int d = c + offset;
@@ -355,9 +441,10 @@ public class Ambush extends BotBrain.Behavior {
             int terrain = level.map[d];
             boolean closed = terrain == Terrain.DOOR;
             //open but unpropped: it shuts once the hero crosses it
+            Char blocker = Actor.findChar(d);
             boolean shuts = terrain == Terrain.OPEN_DOOR
                     && level.heaps.get(d) == null
-                    && (Actor.findChar(d) == null || Actor.findChar(d) == hero);
+                    && (blocker == null || blocker == hero);
             if (!closed && !shuts) continue;
 
             //must be the far side of the door - merely out of the mark's short, stale fov just parades past it
@@ -371,11 +458,11 @@ public class Ambush extends BotBrain.Behavior {
                 return true;
             }
 
-            //the hero must cross the door himself, without the mark plausibly reaching the doorway strictly first
+            //the hero must cross the door himself (dist[d] < dist[c] means a shortest walk does),
+            //without the mark plausibly reaching the doorway strictly first
             boolean beatenToDoor = level.distance(mob.pos, d) / mob.speed()
                     < s.dist[d] / hero.speed();
-            if (!beatenToDoor && s.dist[d] < s.dist[c]
-                    && (path == null || onRoute(path, d))) {
+            if (!beatenToDoor && s.dist[d] < s.dist[c]) {
                 return true;
             }
         }
@@ -396,35 +483,5 @@ public class Ambush extends BotBrain.Behavior {
             cSide   = Integer.signum(c % w - d % w);
         }
         return mobSide != 0 && cSide != 0 && mobSide != cSide;
-    }
-
-    //the hero's route to a spot, walked backward along the distance map; one shortest route of possibly several
-    private static int[] route( int spot, BotPaths.Snapshot s ) {
-        int len = s.dist[spot];
-        if (len < 0 || len == Integer.MAX_VALUE) return null;
-        int[] path = new int[len + 1];
-        path[len] = spot;
-        int cur = spot;
-        for (int i = len - 1; i >= 0; i--) {
-            int next = -1;
-            for (int offset : PathFinder.NEIGHBOURS8) {
-                int n = cur + offset;
-                if (n >= 0 && n < s.dist.length && s.dist[n] == i && s.pass[n]) {
-                    next = n;
-                    break;
-                }
-            }
-            if (next == -1) return null;
-            path[i] = next;
-            cur = next;
-        }
-        return path;
-    }
-
-    private static boolean onRoute( int[] path, int cell ) {
-        for (int p : path) {
-            if (p == cell) return true;
-        }
-        return false;
     }
 }
