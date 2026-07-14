@@ -638,36 +638,26 @@ public abstract class Char extends Actor {
 		return mod;
 	}
 
-	public static float evasionModifier( Char defender ) {
-		float mod = 1f;
-		if (defender.buff(Bless.class) != null) mod *= 1.25f;
-		if (defender.buff(  Hex.class) != null) mod *= 0.8f;
-		if (defender.buff( Daze.class) != null) mod *= 0.5f;
-		for (ChampionEnemy buff : defender.buffs(ChampionEnemy.class)){
-			mod *= buff.evasionAndAccuracyFactor();
+	public static float getAccuracy(Char attacker, Char defender) {
+		//invisible chars always hit (for the hero this is surprise attacking)
+		if (attacker.invisible > 0 && attacker.canSurpriseAttack()) {
+			return INFINITE_ACCURACY;
+		} else {
+			return attacker.attackSkill(defender);
 		}
-		mod *= AscensionChallenge.statModifier(defender);
-		if (Dungeon.hero.heroClass != HeroClass.CLERIC
-				&& Dungeon.hero.hasTalent(Talent.BLESS)
-				&& defender.alignment == Alignment.ALLY){
-			mod *= 1.01f + 0.02f*Dungeon.hero.pointsInTalent(Talent.BLESS);
+	}
+
+	public static float getDefense(Char defender, Char attacker) {
+		if (defender.buff(MonkEnergy.MonkAbility.Focus.FocusBuff.class) != null){
+			return INFINITE_EVASION;
+		} else {
+			return defender.defenseSkill( attacker );
 		}
-		mod *= FerretTuft.evasionMultiplier();
-		return mod;
 	}
 
 	public static float hitChance( Char attacker, Char defender, float accMulti ) {
-		float acuStat = attacker.attackSkill( defender );
-		float defStat = defender.defenseSkill( attacker );
-
-		//invisible chars always hit (for the hero this is surprise attacking)
-		if (attacker.invisible > 0 && attacker.canSurpriseAttack()){
-			acuStat = INFINITE_ACCURACY;
-		}
-
-		if (defender.buff(MonkEnergy.MonkAbility.Focus.FocusBuff.class) != null){
-			defStat = INFINITE_EVASION;
-		}
+		float acuStat = getAccuracy(attacker, defender);
+		float defStat = getDefense(defender, attacker);
 
 		if (defStat >= INFINITE_EVASION){
 			return 0f;
@@ -676,7 +666,7 @@ public abstract class Char extends Actor {
 		}
 
 		float acuMax = acuStat * accuracyModifier( attacker ) * accMulti;
-		float defMax = defStat * evasionModifier( defender );
+		float defMax = defStat * accuracyModifier( defender );
 
 		if (acuMax <= 0) return 0f;
 		if (defMax <= 0) return 1f;
@@ -684,20 +674,11 @@ public abstract class Char extends Actor {
 	}
 
 	public static boolean hit( Char attacker, Char defender, float accMulti, boolean magic ) {
-		float acuStat = attacker.attackSkill( defender );
-		float defStat = defender.defenseSkill( attacker );
+		float acuStat = getAccuracy(attacker, defender);
+		float defStat = getDefense(defender, attacker);
 
 		if (defender instanceof Hero && ((Hero) defender).damageInterrupt){
 			((Hero) defender).interrupt();
-		}
-
-		//invisible chars always hit (for the hero this is surprise attacking)
-		if (attacker.invisible > 0 && attacker.canSurpriseAttack()){
-			acuStat = INFINITE_ACCURACY;
-		}
-
-		if (defender.buff(MonkEnergy.MonkAbility.Focus.FocusBuff.class) != null){
-			defStat = INFINITE_EVASION;
 		}
 
 		//if accuracy or evasion are large enough, treat them as infinite.
@@ -711,7 +692,7 @@ public abstract class Char extends Actor {
 		}
 
 		float acuRoll = Random.Float( acuStat ) * accuracyModifier( attacker ) * accMulti;
-		float defRoll = Random.Float( defStat ) * evasionModifier( defender );
+		float defRoll = Random.Float( defStat ) * accuracyModifier( defender );
 
 		if (acuRoll >= defRoll){
 			hitMissIcon = FloatingText.getHitReasonIcon(attacker, acuRoll, defender, defRoll);

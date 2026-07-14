@@ -76,6 +76,70 @@ public class BotPaths {
 		}
 	}
 
+	//the lowest-risk route to every cell, with ties favoring fewer steps
+	public static class RouteMap {
+		public final int[] risk;
+		public final int[] steps;
+		public final int[][] previous;
+
+		RouteMap( int length, int maxSteps ) {
+			risk = new int[length];
+			steps = new int[length];
+			previous = new int[maxSteps + 1][length];
+			Arrays.fill(risk, Integer.MAX_VALUE);
+			Arrays.fill(steps, Integer.MAX_VALUE);
+			for (int[] row : previous) Arrays.fill(row, -1);
+		}
+	}
+
+	public static RouteMap safestRoutes( Snapshot s, int start, int maxSteps, int[] danger ) {
+		RouteMap routes = new RouteMap(s.dist.length, maxSteps);
+		int[][] risks = new int[maxSteps + 1][s.dist.length];
+		for (int[] row : risks) Arrays.fill(row, Integer.MAX_VALUE);
+		risks[0][start] = 0;
+
+		for (int step = 1; step <= maxSteps; step++) {
+			for (int cell = 0; cell < s.dist.length; cell++) {
+				if (risks[step - 1][cell] == Integer.MAX_VALUE) continue;
+				for (int offset : PathFinder.NEIGHBOURS8) {
+					int next = cell + offset;
+					if (next < 0 || next >= s.dist.length
+							|| !Dungeon.level.adjacent(cell, next) || !s.pass[next]) continue;
+					int risk = risks[step - 1][cell] + danger[next];
+					if (risk < risks[step][next]) {
+						risks[step][next] = risk;
+						routes.previous[step][next] = cell;
+					}
+				}
+			}
+		}
+
+		for (int cell = 0; cell < s.dist.length; cell++) {
+			for (int step = 0; step <= maxSteps; step++) {
+				if (risks[step][cell] < routes.risk[cell]) {
+					routes.risk[cell] = risks[step][cell];
+					routes.steps[cell] = step;
+				}
+			}
+		}
+		return routes;
+	}
+
+	public static int predecessor( int cell, RouteMap routes ) {
+		return routes.steps[cell] == 0 || routes.steps[cell] == Integer.MAX_VALUE
+				? -1 : routes.previous[routes.steps[cell]][cell];
+	}
+
+	public static int nextStep( int cell, RouteMap routes ) {
+		if (routes.steps[cell] == 0 || routes.steps[cell] == Integer.MAX_VALUE) return -1;
+		int step = routes.steps[cell];
+		while (step > 1) {
+			cell = routes.previous[step][cell];
+			step--;
+		}
+		return cell;
+	}
+
 	//distances from the hero over cells that are passable and already known,
 	//mirroring the mask Hero.getCloser walks with
 	static Snapshot snapshot( Hero hero ) {
