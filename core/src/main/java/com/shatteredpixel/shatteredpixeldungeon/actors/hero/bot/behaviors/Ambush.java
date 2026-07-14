@@ -12,11 +12,19 @@ import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.watabou.utils.PathFinder;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class Ambush extends BotBrain.Behavior {
     private static final int MAX_ROUTE_STEPS = 12;
+    private static final int COST_SCALE = 100;
+
+    static {
+        assert worthTheCost(6.02f, 12f, 0f);  //one step cuts four attackers to two
+        assert !worthTheCost(9.02f, 3f, 3f); //three free shots cost more than the ambush
+    }
 
     @Override
     public String name() {
@@ -30,6 +38,11 @@ public class Ambush extends BotBrain.Behavior {
 
     @Override
     public boolean tryAct( Hero hero, BotPaths.Snapshot s ) {
+        List<Mob> hunters = new ArrayList<>();
+        for (Mob mob : hero.getVisibleEnemies()) {
+            if (threat(mob) && mob.state == mob.HUNTING && mob.invisible == 0) hunters.add(mob);
+        }
+
         BotPaths.RouteMap routeMap = null;
         Mob target = null;
         int bestDist = Integer.MAX_VALUE;
@@ -42,8 +55,8 @@ public class Ambush extends BotBrain.Behavior {
                     mob.surprisedBy(hero, true) && (hero.canAttack(mob) || mob.state == mob.SLEEPING)) {
                 continue;
             }
-            if (routeMap == null) routeMap = routes(hero, s);
-            if (!canSetUp(hero, mob, s, routeMap)) continue;
+            if (routeMap == null) routeMap = routes(hero, s, hunters);
+            if (!canSetUp(hero, mob, s, routeMap, hunters)) continue;
             int dist = s.dist[mob.pos];
             if (dist < bestDist) {
                 bestDist = dist;
@@ -69,14 +82,8 @@ public class Ambush extends BotBrain.Behavior {
 
         for (Mob mob : hero.getVisibleEnemies()) {
             if (mob == target || !threat(mob)) continue;
-            //prefer a fight already in reach over sitting in ambush (fellow slippery chasers don't count)
-            if (hero.canAttack(mob)
-                    && (mob.surprisedBy(hero, true) || !canSetUp(hero, mob, s, routeMap))) {
-                return false;
-            }
-            //a chaser aware and lined up is past ambushing - step aside for the fighting behaviors
-            if (!mob.surprisedBy(hero, true) && mob.canAttackTarget(hero)
-                    && sees(mob, hero.pos)) {
+            //never walk away from a guaranteed hit; aware attackers are priced into the route below
+            if (hero.canAttack(mob) && mob.surprisedBy(hero, true)) {
                 return false;
             }
         }
@@ -175,11 +182,13 @@ public class Ambush extends BotBrain.Behavior {
     }
 
     //a hiding spot exists within the justified walk
-    private boolean canSetUp( Hero hero, Mob mob, BotPaths.Snapshot s, BotPaths.RouteMap routes ) {
+    private boolean canSetUp( Hero hero, Mob mob, BotPaths.Snapshot s, BotPaths.RouteMap routes,
+                              List<Mob> hunters ) {
         //flails and the like never land surprise hits: no trap pays off
         if (!hero.canSurpriseAttack()) return false;
         if (tooFast(hero, mob)) return false;
-        return ambushSpot(hero, mob, s, routes) != -1;
+        int spot = ambushSpot(hero, mob, s, routes);
+        return spot != -1 && worthRunning(hero, mob, spot, routes, hunters);
     }
 
     //a mark acting more often than the hero closes the gap mid-trek and can strike through the door unsurprised
@@ -251,21 +260,71 @@ public class Ambush extends BotBrain.Behavior {
         return true;
     }
 
-    //all safest routes from the hero: fewest melee attack opportunities first,
-    //then fewest steps. rebuilt every turn so moving hunters change the route
-    private BotPaths.RouteMap routes( Hero hero, BotPaths.Snapshot s ) {
+    //all safest routes from the hero, scored in hundredths of expected HP lost.
+    //each step pays for every melee swing or ranged shot that can land there,
+    //plus the same HT/1000 per turn hunger eventually costs while starving
+    //ponytail: projects current attack geometry; simulate mob turns only if per-step replanning falls short
+    private BotPaths.RouteMap routes( Hero hero, BotPaths.Snapshot s, List<Mob> hunters ) {
         Level level = Dungeon.level;
         int length = level.length();
         int[] danger = new int[length];
-        for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob) || mob.state != mob.HUNTING || mob.invisible > 0) continue;
-            for (int offset : PathFinder.NEIGHBOURS8) {
-                int c = mob.pos + offset;
-                if (c >= 0 && c < length && level.adjacent(mob.pos, c)) danger[c]++;
+        float moveTime = 1f / hero.speed();
+        int hungerCost = Math.max(1, Math.round(moveTime * hero.HT / 1000f * COST_SCALE));
+        for (int c = 0; c < length; c++) danger[c] = hungerCost;
+
+        for (Mob mob : hunters) {
+            boolean ranged = !level.adjacent(mob.pos, hero.pos)
+                    && mob.canAttackTarget(hero);
+            int meleeCost = attackCost(mob, hero, moveTime, false);
+            int rangedCost = attackCost(mob, hero, moveTime, true);
+            for (int c = 0; c < length; c++) {
+                if (level.adjacent(mob.pos, c)) {
+                    danger[c] += meleeCost;
+                } else if (ranged && level.distance(mob.pos, c) <= mob.viewDistance
+                        && BotPaths.lineFree(mob.pos, c)) {
+                    danger[c] += rangedCost;
+                }
             }
         }
 
         return BotPaths.safestRoutes(s, hero.pos, MAX_ROUTE_STEPS, danger);
+    }
+
+    //running buys a guaranteed strike. pay for the whole walk only when it is
+    //cheaper than the enemy response to attacking here plus the miss it avoids
+    private boolean worthRunning( Hero hero, Mob target, int spot, BotPaths.RouteMap routes,
+                                  List<Mob> hunters ) {
+        if (spot == hero.pos) return true;
+        float routeCost = routes.risk[spot] / (float) COST_SCALE;
+        float fightCost = incomingCost(hero, hunters, hero.attackDelay());
+        float ambushValue = (1f - hitChance(hero, target))
+                * hitChance(target, hero) * avgDamage(target);
+        boolean worthIt = worthTheCost(routeCost, fightCost, ambushValue);
+        if (!worthIt) {
+            Bot.log("ambush: %s costs ~%.2f hp for ~%.2f hp of safety", target.name(),
+                    routeCost, fightCost + ambushValue);
+        }
+        return worthIt;
+    }
+
+    private static boolean worthTheCost( float routeCost, float fightCost, float ambushValue ) {
+        return routeCost < fightCost + ambushValue;
+    }
+
+    private static float incomingCost( Hero hero, List<Mob> hunters, float time ) {
+        float total = 0;
+        for (Mob mob : hunters) {
+            if (!mob.canAttackTarget(hero)) continue;
+            boolean ranged = !Dungeon.level.adjacent(mob.pos, hero.pos);
+            total += attackCost(mob, hero, time, ranged) / (float) COST_SCALE;
+        }
+        return total;
+    }
+
+    private static int attackCost( Mob mob, Hero hero, float time, boolean ranged ) {
+        float accuracy = Char.hitChance(mob, hero, ranged ? 2f : 1f);
+        return Math.max(1, Math.round(time / mob.attackDelay()
+                * accuracy * avgDamage(mob) * COST_SCALE));
     }
 
     //the mob's fov as it will be on its next act, recomputed from where it
