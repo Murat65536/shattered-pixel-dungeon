@@ -160,7 +160,7 @@ public class Ambush extends BotBrain.Behavior {
     private boolean hidden( Hero hero, Mob mob, BotPaths.RouteMap routes ) {
         if (sees(mob, hero.pos)) return false;
         if (inPosition(hero, mob)) return true;
-        return worksAsLosAmbush(hero, mob, hero.pos, routes, freshFov(mob), new HashMap<>());
+        return worksAsLosAmbush(mob, hero.pos, routes, new HashMap<>(), new HashMap<>());
     }
 
     //beside a shut door with the mark on its far side, ignoring its possibly-stale fov (unlike hidden())
@@ -202,8 +202,8 @@ public class Ambush extends BotBrain.Behavior {
      */
     private int ambushSpot(Hero hero, Mob mob, BotPaths.Snapshot s, BotPaths.RouteMap routes) {
 
-        boolean[] mobFov = freshFov(mob);
         Map<Integer, PathFinder.Path> paths = new HashMap<>();
+        Map<Integer, boolean[]> fovs = new HashMap<>();
 
         Level level = Dungeon.level;
         int best = -1;
@@ -219,7 +219,7 @@ public class Ambush extends BotBrain.Behavior {
             if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
 
             if (doorAmbushLead(hero, mob, c, routes) == -1
-                    && !worksAsLosAmbush(hero, mob, c, routes, mobFov, paths)) {
+                    && !worksAsLosAmbush(mob, c, routes, paths, fovs)) {
                 continue;
             }
             best = c;
@@ -233,9 +233,10 @@ public class Ambush extends BotBrain.Behavior {
     //the walk it is expected to make ending within striking reach of c and
     //staying blind to c the whole way - a mark that regains its line mid-walk
     //stops chasing ghosts right where it stands instead of strolling into reach
-    private boolean worksAsLosAmbush( Hero hero, Mob mob, int c, BotPaths.RouteMap routes,
-                                      boolean[] mobFov, Map<Integer, PathFinder.Path> paths ) {
-        if (mobFov[c]) return false;
+    private boolean worksAsLosAmbush( Mob mob, int c, BotPaths.RouteMap routes,
+                                      Map<Integer, PathFinder.Path> paths,
+                                      Map<Integer, boolean[]> fovs ) {
+        if (fovs.computeIfAbsent(mob.pos, pos -> freshFov(mob, pos))[c]) return false;
 
         Level level = Dungeon.level;
         int dest = BotPaths.predecessor(c, routes);
@@ -254,7 +255,7 @@ public class Ambush extends BotBrain.Behavior {
         for (int cell : path) {
             if (level.distance(cell, c) <= 1) continue; //in reach: the strike lands first
             if (level.distance(cell, c) <= mob.viewDistance
-                    && BotPaths.lineFree(cell, c)) {
+                    && fovs.computeIfAbsent(cell, pos -> freshFov(mob, pos))[c]) {
                 return false;
             }
         }
@@ -304,6 +305,17 @@ public class Ambush extends BotBrain.Behavior {
         boolean[] fov = new boolean[Dungeon.level.length()];
         Dungeon.level.updateFieldOfView(mob, fov);
         return fov;
+    }
+
+    //predict the same sight the mob will have after walking to pos
+    static boolean[] freshFov( Mob mob, int pos ) {
+        int actualPos = mob.pos;
+        try {
+            mob.pos = pos;
+            return freshFov(mob);
+        } finally {
+            mob.pos = actualPos;
+        }
     }
 
     //the adjacent door c hides behind, or -1 when c is not a door ambush
