@@ -8,6 +8,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.Bot;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
+import com.shatteredpixel.shatteredpixeldungeon.items.artifacts.CloakOfShadows;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Terrain;
 import com.watabou.utils.PathFinder;
@@ -20,6 +21,7 @@ import java.util.Map;
 public class Ambush extends BotBrain.Behavior {
     private static final int MAX_ROUTE_STEPS = 12;
     private static final int COST_SCALE = 100;
+    private static final float CLOAK_CHARGE_PENALTY = 0.10f;
 
     static {
         assert worthTheCost(6.02f, 12f, 0f);  //one step cuts four attackers to two
@@ -38,6 +40,10 @@ public class Ambush extends BotBrain.Behavior {
 
     @Override
     public boolean tryAct( Hero hero, BotPaths.Snapshot s ) {
+        CloakOfShadows cloak = hero.belongings.getItem(CloakOfShadows.class);
+        boolean canCloak = hero.invisible == 0 && hero.canSurpriseAttack()
+                && cloak != null && cloak.actions(hero).contains(CloakOfShadows.AC_STEALTH);
+
         List<Mob> hunters = new ArrayList<>();
         for (Mob mob : hero.getVisibleEnemies()) {
             if (threat(mob) && mob.state == mob.HUNTING && mob.invisible == 0) hunters.add(mob);
@@ -56,7 +62,8 @@ public class Ambush extends BotBrain.Behavior {
                 continue;
             }
             if (routeMap == null) routeMap = routes(hero, s, hunters);
-            if (!canSetUp(hero, mob, s, routeMap, hunters)) continue;
+            if (!(canCloak && sees(hero, mob.pos) && hero.canAttack(mob))
+                    && !canSetUp(hero, mob, s, routeMap, hunters)) continue;
             int dist = s.dist[mob.pos];
             if (dist < bestDist) {
                 bestDist = dist;
@@ -72,9 +79,17 @@ public class Ambush extends BotBrain.Behavior {
             }
             //aware: standing ground just trades misses - duck out of its sight and it will blunder into reach blind
             int spot = ambushSpot(hero, target, s, routeMap);
-            if (spot == -1) {
-                return false;
+            float fightCost = incomingCost(hero, hunters, hero.attackDelay())
+                    + (1f - hitChance(hero, target))
+                    * hitChance(target, hero) * avgDamage(target);
+            float walkCost = spot == -1 ? Float.POSITIVE_INFINITY
+                    : routeMap.risk[spot] / (float) COST_SCALE;
+            float cloakCost = canCloak ? hero.HT * CLOAK_CHARGE_PENALTY
+                    : Float.POSITIVE_INFINITY;
+            if (cloakCost < Math.min(walkCost, fightCost)) {
+                return Bot.requestUse(cloak, CloakOfShadows.AC_STEALTH, null, "cloak ambush");
             }
+            if (fightCost <= walkCost) return false;
             if (spot != hero.pos) {
                 return stageAmbush(hero, target, spot, routeMap);
             }
@@ -188,7 +203,8 @@ public class Ambush extends BotBrain.Behavior {
         if (!hero.canSurpriseAttack()) return false;
         if (tooFast(hero, mob)) return false;
         int spot = ambushSpot(hero, mob, s, routes);
-        return spot != -1 && worthRunning(hero, mob, spot, routes, hunters);
+        return spot != -1 && (!mob.canAttackTarget(hero)
+                || worthRunning(hero, mob, spot, routes, hunters));
     }
 
     //a mark acting more often than the hero closes the gap mid-trek and can strike through the door unsurprised
