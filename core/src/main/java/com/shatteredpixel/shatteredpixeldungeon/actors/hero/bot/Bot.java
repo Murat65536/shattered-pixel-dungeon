@@ -118,8 +118,6 @@ public class Bot {
 		pendingUse = null;
 		log("disabled: %s", reason);
 		GLog.n("Bot: OFF (%s)", reason);
-		//a giving-up bot ends a harness run as a stall; ignored when no harness runs
-		BotHarness.onBotDisabled(reason);
 	}
 
 	// *** deferred item use: decided on the actor thread, run on the render thread ***

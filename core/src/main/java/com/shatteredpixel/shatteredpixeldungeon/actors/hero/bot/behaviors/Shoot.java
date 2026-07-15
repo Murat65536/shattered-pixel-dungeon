@@ -41,11 +41,7 @@ public class Shoot extends BotBrain.Behavior {
         Mob best = null;
         int bestDist = Integer.MAX_VALUE;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob) || mob.state != mob.HUNTING) continue;
             if (Bot.isBlacklisted(mob.pos)) continue;
-            //committed to the hero: shooting already, or able to walk over.
-            //one that can do neither can be safely ignored, not sniped
-            if (!mob.canAttackTarget(hero) && !s.reachable(mob.pos)) continue;
             int dist = Dungeon.level.distance(hero.pos, mob.pos);
             if (dist < bestDist) {
                 bestDist = dist;

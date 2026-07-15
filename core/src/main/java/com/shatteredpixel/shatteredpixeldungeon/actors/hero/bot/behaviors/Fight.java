@@ -13,24 +13,14 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 //Loot forever. an adjacent sleeper is still struck at once: that's a free
 //surprise hit, not a trek
 public class Fight extends BotBrain.Behavior {
-
-    private final String name;
-    private final boolean threatsOnly;
-
-    public Fight( String name, boolean threatsOnly ) {
-        this.name = name;
-        this.threatsOnly = threatsOnly;
-    }
-
     @Override
     public String name() {
-        return name;
+        return "fight";
     }
 
     @Override
     public boolean essential() {
-        //in descend-only mode sleeping mobs are best left sleeping
-        return threatsOnly;
+        return true;
     }
 
     @Override
@@ -63,7 +53,6 @@ public class Fight extends BotBrain.Behavior {
         for (Mob mob : hero.getVisibleEnemies()) {
             if (!threat(mob)) continue;
             if (mob.invisible > 0) continue;
-            if (threatsOnly && mob.state == mob.SLEEPING) continue;
             if (Bot.isBlacklisted(mob.pos) || s.hazard[mob.pos]) continue;
             if (!s.reachable(mob.pos)) continue;
             if (s.dist[mob.pos] < bestDist) {

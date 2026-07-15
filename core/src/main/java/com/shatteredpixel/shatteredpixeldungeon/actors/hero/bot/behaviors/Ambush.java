@@ -23,11 +23,6 @@ public class Ambush extends BotBrain.Behavior {
     private static final int COST_SCALE = 100;
     private static final float CLOAK_CHARGE_PENALTY = 0.10f;
 
-    static {
-        assert worthTheCost(6.02f, 12f, 0f);  //one step cuts four attackers to two
-        assert !worthTheCost(9.02f, 3f, 3f); //three free shots cost more than the ambush
-    }
-
     @Override
     public String name() {
         return "ambush";
@@ -63,7 +58,7 @@ public class Ambush extends BotBrain.Behavior {
             }
             if (routeMap == null) routeMap = routes(hero, s, hunters);
             if (!(canCloak && sees(hero, mob.pos) && hero.canAttack(mob))
-                    && !canSetUp(hero, mob, s, routeMap, hunters)) continue;
+                    && !canSetUp(hero, mob, s, routeMap)) continue;
             int dist = s.dist[mob.pos];
             if (dist < bestDist) {
                 bestDist = dist;
@@ -79,17 +74,14 @@ public class Ambush extends BotBrain.Behavior {
             }
             //aware: standing ground just trades misses - duck out of its sight and it will blunder into reach blind
             int spot = ambushSpot(hero, target, s, routeMap);
-            float fightCost = incomingCost(hero, hunters, hero.attackDelay())
-                    + (1f - hitChance(hero, target))
-                    * hitChance(target, hero) * avgDamage(target);
             float walkCost = spot == -1 ? Float.POSITIVE_INFINITY
                     : routeMap.risk[spot] / (float) COST_SCALE;
             float cloakCost = canCloak ? hero.HT * CLOAK_CHARGE_PENALTY
                     : Float.POSITIVE_INFINITY;
-            if (cloakCost < Math.min(walkCost, fightCost)) {
+            if (cloakCost < walkCost) {
                 return Bot.requestUse(cloak, CloakOfShadows.AC_STEALTH, null, "cloak ambush");
             }
-            if (fightCost <= walkCost) return false;
+            if (spot == -1) return false;
             if (spot != hero.pos) {
                 return stageAmbush(hero, target, spot, routeMap);
             }
@@ -124,7 +116,7 @@ public class Ambush extends BotBrain.Behavior {
                 return false;
             }
             //beside a closed door with no better spot: possibly stale sight again, hold rather than give up
-            if (besideClosedDoor(hero.pos)) {
+            if (inPosition(hero, target)) {
                 return holdPosition(hero);
             }
             return false;
@@ -149,8 +141,15 @@ public class Ambush extends BotBrain.Behavior {
         return issueHandle(hero, name() + "-hide", spot);
     }
 
-    //stay put a turn waiting for the mark; gives up once patience runs out
+    //stay put a turn waiting for the mark, but never give a hunter a free shot
     private boolean holdPosition( Hero hero ) {
+        for (Mob mob : hero.getVisibleEnemies()) {
+            //cached fov may predate a just-closed door; judge the mob's next act
+            if (threat(mob) && mob.state == mob.HUNTING
+                    && mob.canAttackTarget(hero) && freshFov(mob)[hero.pos]) {
+                return false;
+            }
+        }
         Bot.log("ambush: waiting");
         hero.rest(false);
         return true;
@@ -160,7 +159,7 @@ public class Ambush extends BotBrain.Behavior {
     //come through, or hidden in the open with its walk due to pass within reach
     private boolean hidden( Hero hero, Mob mob, BotPaths.RouteMap routes ) {
         if (sees(mob, hero.pos)) return false;
-        if (besideClosedDoor(hero.pos)) return true;
+        if (inPosition(hero, mob)) return true;
         return worksAsLosAmbush(hero, mob, hero.pos, routes, freshFov(mob), new HashMap<>());
     }
 
@@ -185,26 +184,12 @@ public class Ambush extends BotBrain.Behavior {
                 && ch.fieldOfView[cell];
     }
 
-    private boolean besideClosedDoor( int pos ) {
-        for (int offset : PathFinder.NEIGHBOURS8) {
-            int d = pos + offset;
-            if (d >= 0 && d < Dungeon.level.length()
-                    && Dungeon.level.map[d] == Terrain.DOOR) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    //a hiding spot exists within the justified walk
-    private boolean canSetUp( Hero hero, Mob mob, BotPaths.Snapshot s, BotPaths.RouteMap routes,
-                              List<Mob> hunters ) {
+    //a hiding spot exists within the bounded walk
+    private boolean canSetUp( Hero hero, Mob mob, BotPaths.Snapshot s, BotPaths.RouteMap routes ) {
         //flails and the like never land surprise hits: no trap pays off
         if (!hero.canSurpriseAttack()) return false;
         if (tooFast(hero, mob)) return false;
-        int spot = ambushSpot(hero, mob, s, routes);
-        return spot != -1 && (!mob.canAttackTarget(hero)
-                || worthRunning(hero, mob, spot, routes, hunters));
+        return ambushSpot(hero, mob, s, routes) != -1;
     }
 
     //a mark acting more often than the hero closes the gap mid-trek and can strike through the door unsurprised
@@ -304,37 +289,6 @@ public class Ambush extends BotBrain.Behavior {
         }
 
         return BotPaths.safestRoutes(s, hero.pos, MAX_ROUTE_STEPS, danger);
-    }
-
-    //running buys a guaranteed strike. pay for the whole walk only when it is
-    //cheaper than the enemy response to attacking here plus the miss it avoids
-    private boolean worthRunning( Hero hero, Mob target, int spot, BotPaths.RouteMap routes,
-                                  List<Mob> hunters ) {
-        if (spot == hero.pos) return true;
-        float routeCost = routes.risk[spot] / (float) COST_SCALE;
-        float fightCost = incomingCost(hero, hunters, hero.attackDelay());
-        float ambushValue = (1f - hitChance(hero, target))
-                * hitChance(target, hero) * avgDamage(target);
-        boolean worthIt = worthTheCost(routeCost, fightCost, ambushValue);
-        if (!worthIt) {
-            Bot.log("ambush: %s costs ~%.2f hp for ~%.2f hp of safety", target.name(),
-                    routeCost, fightCost + ambushValue);
-        }
-        return worthIt;
-    }
-
-    private static boolean worthTheCost( float routeCost, float fightCost, float ambushValue ) {
-        return routeCost < fightCost + ambushValue;
-    }
-
-    private static float incomingCost( Hero hero, List<Mob> hunters, float time ) {
-        float total = 0;
-        for (Mob mob : hunters) {
-            if (!mob.canAttackTarget(hero)) continue;
-            boolean ranged = !Dungeon.level.adjacent(mob.pos, hero.pos);
-            total += attackCost(mob, hero, time, ranged) / (float) COST_SCALE;
-        }
-        return total;
     }
 
     private static int attackCost( Mob mob, Hero hero, float time, boolean ranged ) {

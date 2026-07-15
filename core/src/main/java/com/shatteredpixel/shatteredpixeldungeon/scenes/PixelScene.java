@@ -25,7 +25,6 @@ import com.badlogic.gdx.Input;
 import com.shatteredpixel.shatteredpixeldungeon.Assets;
 import com.shatteredpixel.shatteredpixeldungeon.Badges;
 import com.shatteredpixel.shatteredpixeldungeon.SPDSettings;
-import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotHarness;
 import com.shatteredpixel.shatteredpixeldungeon.effects.BadgeBanner;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Languages;
 import com.shatteredpixel.shatteredpixeldungeon.messages.Messages;
@@ -181,8 +180,6 @@ public class PixelScene extends Scene {
 
 	@Override
 	public void update() {
-		BotHarness.tick();
-
 		//we create this here so that it is last in the scene
 		if (DeviceCompat.isDesktop() && fullscreenListener == null){
 			KeyEvent.addKeyListener(fullscreenListener = new Signal.Listener<KeyEvent>() {
