@@ -6,12 +6,8 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 
-//attack the closest hostile that is in reach or can be walked to. sits in the
-//chain twice: awake enemies preempt everything ("fight"), but a sleeping one
-//isn't bothering anybody, so walking over to it can wait until after looting
-//("cull") - otherwise chasing it through sight-breaking grass ping-pongs with
-//Loot forever. an adjacent sleeper is still struck at once: that's a free
-//surprise hit, not a trek
+//attack the best hostile already in reach. Shoot runs first for bows, wands,
+//and thrown weapons; enemies the hero cannot currently hit are left alone
 public class Fight extends BotBrain.Behavior {
     @Override
     public String name() {
@@ -45,21 +41,6 @@ public class Fight extends BotBrain.Behavior {
         if (best != null) {
             return issueHandle(hero, name(), best.pos);
         }
-
-        //nothing in reach: close in on the nearest reachable enemy.
-        //one standing in a harmful cloud is left alone - walking up to it means
-        //wading in; a hunter will come out on its own, a sleeper can wait
-        int bestDist = Integer.MAX_VALUE;
-        for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob)) continue;
-            if (mob.invisible > 0) continue;
-            if (Bot.isBlacklisted(mob.pos) || s.hazard[mob.pos]) continue;
-            if (!s.reachable(mob.pos)) continue;
-            if (s.dist[mob.pos] < bestDist) {
-                bestDist = s.dist[mob.pos];
-                best = mob;
-            }
-        }
-        return best != null && issueHandle(hero, name(), best.pos);
+        return false;
     }
 }

@@ -8,7 +8,7 @@ import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotItems;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotPaths;
 import com.shatteredpixel.shatteredpixeldungeon.items.food.Food;
 
-//eat before hunger starts to hurt
+//save food until starvation and low health make eating necessary
 public class Eat extends BotBrain.Behavior {
     @Override
     public String name() {
@@ -23,9 +23,9 @@ public class Eat extends BotBrain.Behavior {
     @Override
     public boolean tryAct(Hero hero, BotPaths.Snapshot s ) {
         Hunger hunger = hero.buff(Hunger.class);
-        if (hunger == null || hunger.hunger() < Hunger.HUNGRY) return false;
+        if (hunger == null || !hunger.isStarving() || hero.HP >= hero.HT * 0.5f) return false;
 
-        Food food = BotItems.pickFood(hero, hunger.isStarving());
+        Food food = BotItems.pickFood(hero, true);
         if (food == null) return false;
 
         Bot.log("eat -> %s", food.name());

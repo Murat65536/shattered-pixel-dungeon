@@ -1760,7 +1760,13 @@ public class Hero extends Char {
 	}
 
 	public ArrayList<Mob> getVisibleEnemies(){
-		return new ArrayList<>(visibleEnemies);
+		if (!Bot.enabled) return new ArrayList<>(visibleEnemies);
+
+		ArrayList<Mob> enemies = new ArrayList<>();
+		for (Mob mob : Dungeon.level.mobs) {
+			if (mob.alignment == Alignment.ENEMY) enemies.add(mob);
+		}
+		return enemies;
 	}
 	
 	private boolean walkingToVisibleTrapInFog = false;

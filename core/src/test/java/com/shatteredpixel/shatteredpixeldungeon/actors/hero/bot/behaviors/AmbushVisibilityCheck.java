@@ -30,5 +30,10 @@ public final class AmbushVisibilityCheck {
         assert !BotPaths.lineFree(source, ambushSpot);
         assert Ambush.freshFov(mob, source)[ambushSpot];
         assert mob.pos == 10 + 20 * w;
+
+        mob.pos = 11 + 10 * w;
+        int actualSpot = 12 + 11 * w;
+        assert Ambush.mobReachesFirst(mob, actualSpot, 2, 1f, 1f);
+        assert !Ambush.mobReachesFirst(mob, actualSpot, 1, 1f, 1f);
     }
 }

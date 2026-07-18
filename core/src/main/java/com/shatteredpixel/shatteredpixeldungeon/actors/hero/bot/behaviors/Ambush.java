@@ -206,6 +206,8 @@ public class Ambush extends BotBrain.Behavior {
         Map<Integer, boolean[]> fovs = new HashMap<>();
 
         Level level = Dungeon.level;
+        float heroSpeed = hero.speed();
+        float mobSpeed = mob.speed();
         int best = -1;
         int bestRisk = Integer.MAX_VALUE;
         int bestSteps = Integer.MAX_VALUE;
@@ -214,6 +216,7 @@ public class Ambush extends BotBrain.Behavior {
             if (routes.steps[c] > MAX_ROUTE_STEPS
                     || routes.risk[c] > bestRisk
                     || routes.risk[c] == bestRisk && routes.steps[c] >= bestSteps) continue;
+            if (mobReachesFirst(mob, c, routes.steps[c], heroSpeed, mobSpeed)) continue;
 
             int terrain = level.map[c];
             if (terrain == Terrain.DOOR || terrain == Terrain.OPEN_DOOR) continue;
@@ -227,6 +230,13 @@ public class Ambush extends BotBrain.Behavior {
             bestSteps = routes.steps[c];
         }
         return best;
+    }
+
+    //the mark's straight-line best case must not beat the hero to the actual hiding cell
+    static boolean mobReachesFirst( Mob mob, int spot, int heroSteps,
+                                    float heroSpeed, float mobSpeed ) {
+        return Dungeon.level.distance(mob.pos, spot) / mobSpeed
+                < heroSteps / heroSpeed;
     }
 
     //whether c hides from this mob in the open: out of its next-act fov, with
@@ -345,14 +355,10 @@ public class Ambush extends BotBrain.Behavior {
                 return d;
             }
 
-            //the hero must cross the door himself on the chosen route,
-            //without the mark plausibly reaching the doorway strictly first
+            //the hero must cross the door himself on the chosen route; the race
+            //to the actual hiding cell was already checked by ambushSpot
             if (BotPaths.predecessor(c, routes) != d) continue;
-            boolean beatenToDoor = level.distance(mob.pos, d) / mob.speed()
-                    < (routes.steps[c] - 1) / hero.speed();
-            if (!beatenToDoor) {
-                return d;
-            }
+            return d;
         }
         return -1;
     }
