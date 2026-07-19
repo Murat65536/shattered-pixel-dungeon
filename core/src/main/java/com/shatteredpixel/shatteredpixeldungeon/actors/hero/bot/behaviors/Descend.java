@@ -26,6 +26,6 @@ public class Descend extends BotBrain.Behavior {
         //gas over the stairs disperses in a few turns; no need to wade in
         if (s.hazard[exit] && hero.pos != exit) return false;
         if (hero.pos != exit && !s.reachable(exit)) return false;
-        return issueHandle(hero, name(), exit);
+        return issueHandle(hero, name(), exit, s);
     }
 }

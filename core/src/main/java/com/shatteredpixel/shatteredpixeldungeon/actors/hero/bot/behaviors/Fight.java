@@ -39,7 +39,7 @@ public class Fight extends BotBrain.Behavior {
             }
         }
         if (best != null) {
-            return issueHandle(hero, name(), best.pos);
+            return issueHandle(hero, name(), best.pos, s);
         }
         return false;
     }

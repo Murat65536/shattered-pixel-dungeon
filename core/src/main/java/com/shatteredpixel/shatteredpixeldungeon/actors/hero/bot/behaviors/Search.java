@@ -29,6 +29,6 @@ public class Search extends BotBrain.Behavior {
             hero.search(true);
             return true;
         }
-        return issueHandle(hero, name(), spot);
+        return issueMove(hero, name(), spot, s);
     }
 }

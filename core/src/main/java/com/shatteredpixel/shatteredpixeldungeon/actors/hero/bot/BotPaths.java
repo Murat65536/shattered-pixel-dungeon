@@ -146,17 +146,17 @@ public class BotPaths {
 		Level level = Dungeon.level;
 		int length = level.length();
 		boolean[] pass = new boolean[length];
+		boolean[] hazard = hazards(hero);
 		List<Integer> lockedDoors = new ArrayList<>();
 		for (int i = 0; i < length; i++) {
 			boolean known = level.visited[i] || level.mapped[i];
-			pass[i] = level.passable[i] && known;
+			pass[i] = level.passable[i] && known && !hazard[i] && !Bot.isBlacklisted(i);
 			if (known && (level.map[i] == Terrain.LOCKED_DOOR
 					|| level.map[i] == Terrain.CRYSTAL_DOOR
 					|| level.map[i] == Terrain.LOCKED_EXIT)) {
 				lockedDoors.add(i);
 			}
 		}
-		boolean[] hazard = hazards(hero);
 
 		//a SentryRoom turret is no enemy at all (a neutral, invulnerable NPC), so
 		//no fight behavior will ever see it - it simply executes whoever lingers
@@ -213,6 +213,44 @@ public class BotPaths {
 		}
 
 		return new Snapshot(pass, dist, hazard, lockedDoors);
+	}
+
+	//the first safe step toward a destination. non-walkable targets such as locked
+	//doors route to their nearest reachable neighbor; callers interact once adjacent
+	static int nextStepTo( int target, Snapshot s ) {
+		Level level = Dungeon.level;
+		if (target < 0 || target >= s.dist.length) return -1;
+
+		int cell = target;
+		if (!s.reachable(cell)) {
+			int destination = cell;
+			int bestDist = Integer.MAX_VALUE;
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int neighbor = destination + offset;
+				if (neighbor >= 0 && neighbor < s.dist.length
+						&& level.adjacent(destination, neighbor) && s.dist[neighbor] < bestDist) {
+					cell = neighbor;
+					bestDist = s.dist[neighbor];
+				}
+			}
+			if (bestDist == Integer.MAX_VALUE) return -1;
+		}
+
+		while (s.dist[cell] > 1) {
+			int previous = -1;
+			for (int offset : PathFinder.NEIGHBOURS8) {
+				int neighbor = cell + offset;
+				if (neighbor >= 0 && neighbor < s.dist.length
+						&& level.adjacent(cell, neighbor)
+						&& s.dist[neighbor] == s.dist[cell] - 1) {
+					previous = neighbor;
+					break;
+				}
+			}
+			if (previous == -1) return -1;
+			cell = previous;
+		}
+		return s.dist[cell] == 1 ? cell : -1;
 	}
 
 	//cells a discovered SentryRoom sentry would zap the hero on, mirroring its

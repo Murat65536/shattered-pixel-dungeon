@@ -52,7 +52,7 @@ public class Retreat extends BotBrain.Behavior {
         int step = Dungeon.flee(hero, threat.pos, Dungeon.level.passable, hero.fieldOfView, true);
         if (step == -1 || step == hero.pos) return false;
 
-        if (issueHandle(hero, name(), step)) {
+        if (issueMove(hero, name(), step, s)) {
             streak++;
             return true;
         }

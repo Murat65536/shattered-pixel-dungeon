@@ -22,6 +22,6 @@ public class Escape extends BotBrain.Behavior {
     public boolean tryAct(Hero hero, BotPaths.Snapshot s ) {
         if (!s.hazard[hero.pos]) return false;
         int cell = BotPaths.safeCell(hero, s);
-        return cell != -1 && issueHandle(hero, name(), cell);
+        return cell != -1 && issueMove(hero, name(), cell, s);
     }
 }

@@ -70,7 +70,7 @@ public class Ambush extends BotBrain.Behavior {
         if (sees(hero, target.pos) && (hero.canAttack(target) || Dungeon.level.adjacent(hero.pos, target.pos))) {
             //unaware: spring the trap, the hit is guaranteed
             if (target.surprisedBy(hero, true)) {
-                return issueHandle(hero, name(), target.pos);
+                return issueHandle(hero, name(), target.pos, s);
             }
             //aware: standing ground just trades misses - duck out of its sight and it will blunder into reach blind
             int spot = ambushSpot(hero, target, s, routeMap);
@@ -83,7 +83,7 @@ public class Ambush extends BotBrain.Behavior {
             }
             if (spot == -1) return false;
             if (spot != hero.pos) {
-                return stageAmbush(hero, target, spot, routeMap);
+                return stageAmbush(hero, target, spot, routeMap, s);
             }
         }
 
@@ -125,20 +125,21 @@ public class Ambush extends BotBrain.Behavior {
             //already in place, the mark just hasn't lost sight yet
             return holdPosition(hero);
         }
-        return stageAmbush(hero, target, spot, routeMap);
+        return stageAmbush(hero, target, spot, routeMap, s);
     }
 
     //wait on the last visible tile, then duck behind the door/obstacle once the mark is in reach
-    private boolean stageAmbush( Hero hero, Mob mob, int spot, BotPaths.RouteMap routes ) {
+    private boolean stageAmbush( Hero hero, Mob mob, int spot, BotPaths.RouteMap routes,
+                                 BotPaths.Snapshot s ) {
         int lead = doorAmbushLead(hero, mob, spot, routes);
         if (lead == -1) lead = BotPaths.predecessor(spot, routes);
         if (lead == -1) return false;
         if (hero.pos != lead) {
             int step = BotPaths.nextStep(spot, routes);
-            return step != -1 && issueHandle(hero, name() + "-hide", step);
+            return step != -1 && issueMove(hero, name() + "-hide", step, s);
         }
         if (!Dungeon.level.adjacent(hero.pos, mob.pos)) return holdPosition(hero);
-        return issueHandle(hero, name() + "-hide", spot);
+        return issueMove(hero, name() + "-hide", spot, s);
     }
 
     //stay put a turn waiting for the mark, but never give a hunter a free shot

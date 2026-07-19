@@ -69,6 +69,6 @@ public class Funnel extends BotBrain.Behavior {
         }
 
         int spot = BotPaths.chokePoint(hero, s, hunters, MAX_TREK, FLANK_STEPS);
-        return spot != -1 && issueHandle(hero, name(), spot);
+        return spot != -1 && issueMove(hero, name(), spot, s);
     }
 }

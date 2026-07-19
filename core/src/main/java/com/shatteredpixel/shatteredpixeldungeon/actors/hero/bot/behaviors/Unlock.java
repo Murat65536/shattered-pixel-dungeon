@@ -39,6 +39,6 @@ public class Unlock extends BotBrain.Behavior {
                 best = c;
             }
         }
-        return best != -1 && issueHandle(hero, name(), best);
+        return best != -1 && issueHandle(hero, name(), best, s);
     }
 }

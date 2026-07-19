@@ -51,7 +51,7 @@ public class Douse extends BotBrain.Behavior {
         if (saved < MIN_SAVINGS) return false;
 
         Bot.log("douse: ~%.1f hp saved over %d steps", saved, s.dist[cell]);
-        return issueHandle(hero, name(), cell);
+        return issueMove(hero, name(), cell, s);
     }
 
     //expected hp lost to burning over this many turns: each tick rolls

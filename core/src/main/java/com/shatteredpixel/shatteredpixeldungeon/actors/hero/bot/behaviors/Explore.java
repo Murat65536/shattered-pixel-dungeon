@@ -14,6 +14,6 @@ public class Explore extends BotBrain.Behavior {
     @Override
     public boolean tryAct(Hero hero, BotPaths.Snapshot s ) {
         int cell = BotPaths.nearestFrontier(hero, s);
-        return cell != -1 && issueHandle(hero, name(), cell);
+        return cell != -1 && issueMove(hero, name(), cell, s);
     }
 }

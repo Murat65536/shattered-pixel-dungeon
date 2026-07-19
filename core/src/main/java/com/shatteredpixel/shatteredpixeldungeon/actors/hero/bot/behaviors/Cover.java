@@ -109,7 +109,7 @@ public class Cover extends BotBrain.Behavior {
                 giveUp("it keeps its line on me");
                 return false;
             }
-            return issueHandle(hero, name(), spot);
+            return issueMove(hero, name(), spot, s);
         }
 
         //in cover: no line means no shot, and the shooter has to come to melee

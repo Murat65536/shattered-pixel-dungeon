@@ -31,7 +31,7 @@ public class Loot extends BotBrain.Behavior {
                 best = heap;
             }
         }
-        return best != null && issueHandle(hero, name(), best.pos);
+        return best != null && issueHandle(hero, name(), best.pos, s);
     }
 
     private boolean worthLooting( Hero hero, Heap heap ) {

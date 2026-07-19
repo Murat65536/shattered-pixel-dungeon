@@ -21,8 +21,11 @@
 
 package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot;
 
+import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
+import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
+import com.shatteredpixel.shatteredpixeldungeon.actors.hero.HeroAction;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors.*;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Mob;
 import com.shatteredpixel.shatteredpixeldungeon.actors.mobs.Piranha;
@@ -40,11 +43,32 @@ public class BotBrain {
 			return false;
 		}
 
-		//queues an action for a cell through the same dispatch player taps use
-		protected static boolean issueHandle( Hero hero, String behavior, int cell ) {
+		//interacts now when possible, otherwise moves one safe step toward the target
+		protected static boolean issueHandle( Hero hero, String behavior, int cell, BotPaths.Snapshot s ) {
+			Char target = Actor.findChar(cell);
+			boolean canActNow = cell == hero.pos || Dungeon.level.adjacent(hero.pos, cell)
+					|| target instanceof Mob && hero.fieldOfView[cell] && hero.canAttack(target);
+			if (!canActNow) return issueMove(hero, behavior, cell, s);
+			return issue(hero, behavior, cell, false);
+		}
+
+		//moves exactly one safe tile, without triggering an incidental heap, stair,
+		//alchemy pot, or other action attached to that intermediate cell
+		protected static boolean issueMove( Hero hero, String behavior, int destination,
+		                                    BotPaths.Snapshot s ) {
+			int step = BotPaths.nextStepTo(destination, s);
+			return step != -1 && issue(hero, behavior, step, true);
+		}
+
+		private static boolean issue( Hero hero, String behavior, int cell, boolean move ) {
 			if (!Bot.guardIssue(hero, behavior, cell)) return false;
 			Bot.log("%s -> %d", behavior, cell);
-			if (hero.handle(cell)) {
+			if (move) {
+				hero.curAction = new HeroAction.Move(cell);
+				hero.lastAction = null;
+				hero.next();
+				return true;
+			} else if (hero.handle(cell)) {
 				hero.next();
 				return true;
 			}
@@ -99,7 +123,6 @@ public class BotBrain {
 			new DrinkId(),
 			new Scrolls(),
 			new Loot(),
-			new Rest(),
 			new Descend(),
 			new Unlock(),
 			new Explore(),

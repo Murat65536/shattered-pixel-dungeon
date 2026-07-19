@@ -25,6 +25,8 @@ import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
 import com.shatteredpixel.shatteredpixeldungeon.actors.Actor;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.items.Item;
+import com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion;
+import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll;
 import com.shatteredpixel.shatteredpixeldungeon.scenes.GameScene;
 import com.shatteredpixel.shatteredpixeldungeon.ui.InventoryPane;
 import com.shatteredpixel.shatteredpixeldungeon.ui.Window;
@@ -65,6 +67,13 @@ public class Bot {
 				|| Dungeon.level == null) {
 			return;
 		}
+
+		if (!Potion.allKnown() || !Scroll.allKnown()) {
+			Potion.getKnown().addAll(Potion.getUnknown());
+			Scroll.getKnown().addAll(Scroll.getUnknown());
+			Item.updateQuickslot();
+		}
+		assert Potion.allKnown() && Scroll.allKnown();
 
 		if (uiBlocking) {
 			deferred = true;
