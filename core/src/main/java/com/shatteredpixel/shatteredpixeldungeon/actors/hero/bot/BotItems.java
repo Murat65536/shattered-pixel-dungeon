@@ -157,10 +157,12 @@ public class BotItems {
 	public static class RangedAttack {
 		public final Item item;
 		public final String action;
+		public final Class<?> effect;
 
-		RangedAttack( Item item, String action ) {
+		RangedAttack( Item item, String action, Class<?> effect ) {
 			this.item = item;
 			this.action = action;
+			this.effect = effect;
 		}
 	}
 
@@ -194,14 +196,15 @@ public class BotItems {
 	public static RangedAttack rangedAttack(Hero hero) {
 		SpiritBow bow = hero.belongings.getItem(SpiritBow.class);
 		if (bow != null) {
-			return new RangedAttack(bow, SpiritBow.AC_SHOOT);
+			return new RangedAttack(bow, SpiritBow.AC_SHOOT, hero.getClass());
 		}
 
 		//the staff offers ZAP only while its imbued wand has a charge
 		if (hero.belongings.weapon instanceof MagesStaff
 				&& !hero.belongings.weapon.cursed
 				&& hero.belongings.weapon.actions(hero).contains(MagesStaff.AC_ZAP)) {
-			return new RangedAttack(hero.belongings.weapon, MagesStaff.AC_ZAP);
+			MagesStaff staff = (MagesStaff) hero.belongings.weapon;
+			return new RangedAttack(staff, MagesStaff.AC_ZAP, staff.wandClass());
 		}
 
 		for (Wand wand : hero.belongings.getAllItems(Wand.class)) {
@@ -209,7 +212,7 @@ public class BotItems {
 			if (!DAMAGE_WANDS.contains(wand.getClass())) continue;
 			//lightning arcs through water, hero included
 			if (wand instanceof WandOfLightning && Dungeon.level.water[hero.pos]) continue;
-			return new RangedAttack(wand, Wand.AC_ZAP);
+			return new RangedAttack(wand, Wand.AC_ZAP, wand.getClass());
 		}
 
 		//hardest-hitting throwable the hero is strong enough for
@@ -219,7 +222,7 @@ public class BotItems {
 			if (lastThrowConfirms(missile)) continue;
 			if (best == null || missile.tier > best.tier) best = missile;
 		}
-		return best != null ? new RangedAttack(best, Item.AC_THROW) : null;
+		return best != null ? new RangedAttack(best, Item.AC_THROW, hero.getClass()) : null;
 	}
 
 	//mirrors MissileWeapon.doThrow's warning: the last throw of an upgraded or

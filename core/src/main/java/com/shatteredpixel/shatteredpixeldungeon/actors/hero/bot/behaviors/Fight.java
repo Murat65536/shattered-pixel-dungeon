@@ -26,10 +26,7 @@ public class Fight extends BotBrain.Behavior {
         Mob best = null;
         float bestScore = -1;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob)) continue;
-            //the game refuses to attack invisible chars (Hero.actAttack), and
-            //trying anyway livelocks; leave them alone until they fade back in
-            if (mob.invisible > 0) continue;
+            if (!attackable(hero, mob)) continue;
             if (Bot.isBlacklisted(mob.pos)) continue;
             if (!hero.canAttack(mob)) continue;
             float score = mob.surprisedBy(hero, true) ? 2f : hitChance(hero, mob);

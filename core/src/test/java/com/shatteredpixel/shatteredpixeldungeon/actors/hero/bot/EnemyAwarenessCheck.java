@@ -39,6 +39,16 @@ public final class EnemyAwarenessCheck {
             Bot.enabled = true;
             assert hero.getVisibleEnemies().size() == 1;
             assert hero.getVisibleEnemies().get(0) == enemy;
+            assert BotBrain.Behavior.attackable(hero, enemy);
+
+            Rat meleeInvulnerable = new Rat() {
+                @Override
+                public boolean isInvulnerable(Class effect) {
+                    return effect == Hero.class;
+                }
+            };
+            assert !BotBrain.Behavior.attackable(hero, meleeInvulnerable);
+            assert BotBrain.Behavior.attackable(meleeInvulnerable, EnemyAwarenessCheck.class);
 
             enemy.pos = 42;
             assert hero.getVisibleEnemies().get(0).pos == 42;

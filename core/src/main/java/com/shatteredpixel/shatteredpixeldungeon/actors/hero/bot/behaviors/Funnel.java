@@ -57,7 +57,7 @@ public class Funnel extends BotBrain.Behavior {
             //already funneled: strike whoever is in reach, otherwise hold
             //position and make them file in one by one
             for (Mob mob : hero.getVisibleEnemies()) {
-                if (threat(mob) && hero.canAttack(mob)) {
+                if (attackable(hero, mob) && hero.canAttack(mob)) {
                     return false; //Fight picks the best in-reach target
                 }
             }

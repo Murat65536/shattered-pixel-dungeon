@@ -2,7 +2,6 @@ package com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.behaviors;
 
 
 import com.shatteredpixel.shatteredpixeldungeon.Dungeon;
-import com.shatteredpixel.shatteredpixeldungeon.actors.Char;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.Hero;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotBrain;
 import com.shatteredpixel.shatteredpixeldungeon.actors.hero.bot.BotItems;
@@ -36,7 +35,7 @@ public class Retreat extends BotBrain.Behavior {
 
         Mob threat = null;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob.alignment == Char.Alignment.ENEMY && mob.state != mob.PASSIVE
+            if (threat(mob)
                     && Dungeon.level.adjacent(hero.pos, mob.pos) && mob.speed() < hero.speed()) {
                 threat = mob;
                 break;

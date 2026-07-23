@@ -35,5 +35,9 @@ public final class AmbushVisibilityCheck {
         int actualSpot = 12 + 11 * w;
         assert Ambush.mobReachesFirst(mob, actualSpot, 2, 1f, 1f);
         assert !Ambush.mobReachesFirst(mob, actualSpot, 1, 1f, 1f);
+
+        assert Ambush.preferable(3, 4, 1, 3, 2, 1);
+        assert !Ambush.preferable(3, 1, 1, 3, 2, 1);
+        assert Ambush.preferable(2, 1, 2, 3, 8, 1);
     }
 }

@@ -48,17 +48,19 @@ public class Ambush extends BotBrain.Behavior {
         Mob target = null;
         int bestDist = Integer.MAX_VALUE;
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (!threat(mob) ||
-                    mob.invisible > 0 || //can't be struck (see Fight), so can't be ambushed
+            if (!attackable(hero, mob) ||
                     mob.state != mob.HUNTING ||
                     Bot.isBlacklisted(mob.pos) ||
                     !hero.canAttack(mob) && !s.reachable(mob.pos) ||
                     mob.surprisedBy(hero, true) && (hero.canAttack(mob) || mob.state == mob.SLEEPING)) {
                 continue;
             }
-            if (routeMap == null) routeMap = routes(hero, s, hunters);
-            if (!(canCloak && sees(hero, mob.pos) && hero.canAttack(mob))
-                    && !canSetUp(hero, mob, s, routeMap)) continue;
+            boolean immovable = mob.properties().contains(Char.Property.IMMOVABLE);
+            if (!immovable) {
+                if (routeMap == null) routeMap = routes(hero, s, hunters);
+                if (!(canCloak && sees(hero, mob.pos) && hero.canAttack(mob))
+                        && !canSetUp(hero, mob, s, routeMap)) continue;
+            }
             int dist = s.dist[mob.pos];
             if (dist < bestDist) {
                 bestDist = dist;
@@ -66,6 +68,10 @@ public class Ambush extends BotBrain.Behavior {
             }
         }
         if (target == null) return false;
+        //active DM-300 pylons and other fixed targets cannot walk into an ambush
+        if (target.properties().contains(Char.Property.IMMOVABLE)) {
+            return issueHandle(hero, name(), target.pos, s);
+        }
         //in reach and truly visible - adjacent yet unseen behind the door means attacking would just open it
         if (sees(hero, target.pos) && (hero.canAttack(target) || Dungeon.level.adjacent(hero.pos, target.pos))) {
             //unaware: spring the trap, the hit is guaranteed
@@ -88,7 +94,7 @@ public class Ambush extends BotBrain.Behavior {
         }
 
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (mob == target || !threat(mob)) continue;
+            if (mob == target || !attackable(hero, mob)) continue;
             //never walk away from a guaranteed hit; aware attackers are priced into the route below
             if (hero.canAttack(mob) && mob.surprisedBy(hero, true)) {
                 return false;
@@ -199,7 +205,7 @@ public class Ambush extends BotBrain.Behavior {
     }
 
     /**
-     * Safest spot worth hiding on, nearest when equally safe
+     * Safest spot worth hiding on, favoring more movement options before distance
      */
     private int ambushSpot(Hero hero, Mob mob, BotPaths.Snapshot s, BotPaths.RouteMap routes) {
 
@@ -211,12 +217,13 @@ public class Ambush extends BotBrain.Behavior {
         float mobSpeed = mob.speed();
         int best = -1;
         int bestRisk = Integer.MAX_VALUE;
+        int bestOptions = -1;
         int bestSteps = Integer.MAX_VALUE;
         for (int c = 0; c < s.dist.length; c++) {
             if (!s.pass[c] || s.hazard[c] || Bot.isBlacklisted(c)) continue;
-            if (routes.steps[c] > MAX_ROUTE_STEPS
-                    || routes.risk[c] > bestRisk
-                    || routes.risk[c] == bestRisk && routes.steps[c] >= bestSteps) continue;
+            int options = BotPaths.attackSlots(c);
+            if (routes.steps[c] > MAX_ROUTE_STEPS || !preferable(routes.risk[c], options,
+                    routes.steps[c], bestRisk, bestOptions, bestSteps)) continue;
             if (mobReachesFirst(mob, c, routes.steps[c], heroSpeed, mobSpeed)) continue;
 
             int terrain = level.map[c];
@@ -228,9 +235,16 @@ public class Ambush extends BotBrain.Behavior {
             }
             best = c;
             bestRisk = routes.risk[c];
+            bestOptions = options;
             bestSteps = routes.steps[c];
         }
         return best;
+    }
+
+    static boolean preferable( int risk, int options, int steps,
+                               int bestRisk, int bestOptions, int bestSteps ) {
+        return risk < bestRisk || risk == bestRisk
+                && (options > bestOptions || options == bestOptions && steps < bestSteps);
     }
 
     //the mark's straight-line best case must not beat the hero to the actual hiding cell

@@ -106,6 +106,16 @@ public class BotBrain {
 			return mob.alignment == Char.Alignment.ENEMY
 					&& mob.state != mob.PASSIVE && !waterBound(mob);
 		}
+
+		//a threat an attack can actually affect. keep this separate from threat():
+		//invulnerable enemies still matter when fleeing, taking cover, and routing
+		protected static boolean attackable( Hero hero, Mob mob ) {
+			return attackable(mob, hero.getClass());
+		}
+
+		protected static boolean attackable( Mob mob, Class<?> effect ) {
+			return threat(mob) && mob.invisible == 0 && !mob.isInvulnerable(effect);
+		}
 	}
 
 	private static final Behavior[] CHAIN = new Behavior[]{

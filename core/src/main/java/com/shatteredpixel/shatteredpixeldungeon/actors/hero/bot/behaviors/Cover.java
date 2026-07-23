@@ -63,7 +63,7 @@ public class Cover extends BotBrain.Behavior {
         //the hero can shoot back from right here: that is a fair trade for
         //Fight to make, not something to hide from
         for (Mob mob : shooters) {
-            if (hero.canAttack(mob)) {
+            if (attackable(hero, mob) && hero.canAttack(mob)) {
                 reset();
                 return false;
             }
@@ -89,7 +89,7 @@ public class Cover extends BotBrain.Behavior {
 
         //anything already in reach is Fight's problem before hiding is worth it
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (threat(mob) && hero.canAttack(mob)) {
+            if (attackable(hero, mob) && hero.canAttack(mob)) {
                 return false;
             }
         }

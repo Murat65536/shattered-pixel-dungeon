@@ -33,22 +33,10 @@ public class Shoot extends BotBrain.Behavior {
         //anything already in reach is Fight's problem; swapping to a throw while
         //standing in melee just gives up the better trade
         for (Mob mob : hero.getVisibleEnemies()) {
-            if (threat(mob) && hero.canAttack(mob)) {
+            if (attackable(hero, mob) && hero.canAttack(mob)) {
                 return false;
             }
         }
-
-        Mob best = null;
-        int bestDist = Integer.MAX_VALUE;
-        for (Mob mob : hero.getVisibleEnemies()) {
-            if (Bot.isBlacklisted(mob.pos)) continue;
-            int dist = Dungeon.level.distance(hero.pos, mob.pos);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = mob;
-            }
-        }
-        if (best == null) return false;
 
         //an unknown wand takes the occasional shot: if it turns out to be a
         //damage wand the zap chips like any other, and either way it works
@@ -57,7 +45,8 @@ public class Shoot extends BotBrain.Behavior {
         if (hero.HP >= hero.HT * 0.5f && Actor.now() >= BotItems.nextIdZapAt) {
             Wand unknown = BotItems.idZapWand(hero);
             if (unknown != null) {
-                int aim = QuickSlotButton.autoAim(best, unknown);
+                Mob best = nearestTarget(hero, unknown.getClass());
+                int aim = best == null ? -1 : QuickSlotButton.autoAim(best, unknown);
                 if (aim != -1) {
                     BotItems.nextIdZapAt = Actor.now() + 10;
                     return Bot.requestUseAt(unknown, Wand.AC_ZAP, aim,
@@ -68,6 +57,8 @@ public class Shoot extends BotBrain.Behavior {
 
         BotItems.RangedAttack ranged = BotItems.rangedAttack(hero);
         if (ranged == null) return false;
+        Mob best = nearestTarget(hero, ranged.effect);
+        if (best == null) return false;
 
         //the exact cell to aim at so the projectile connects (may be angled past
         //the target); -1 means no line of fire from where the hero stands
@@ -76,5 +67,19 @@ public class Shoot extends BotBrain.Behavior {
 
         return Bot.requestUseAt(ranged.item, ranged.action, aim,
                 String.format("shoot %s at %s", ranged.item.name(), best.name()));
+    }
+
+    private static Mob nearestTarget( Hero hero, Class<?> effect ) {
+        Mob best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (Mob mob : hero.getVisibleEnemies()) {
+            if (!attackable(mob, effect) || Bot.isBlacklisted(mob.pos)) continue;
+            int dist = Dungeon.level.distance(hero.pos, mob.pos);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = mob;
+            }
+        }
+        return best;
     }
 }
